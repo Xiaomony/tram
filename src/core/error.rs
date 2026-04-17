@@ -16,16 +16,28 @@ pub enum AppError {
     #[error("[Permission Error] {0}")]
     Permission(String),
     #[error("[Permission Error] This program needs root permission. Run it with 'sudo'.")]
-    NeedRootPermission,
+    NoRootPermission,
 
     #[error("[Not Btrfs] '{0}' is not a btrfs file system")]
     NotBtrfs(String),
+
+    #[error("[System Operation Fail] {msg} \n\tRaw error: {raw_err}")]
+    SystemOperationFail {
+        raw_err: nix::errno::Errno,
+        msg: String,
+    },
 
     #[error("[Multiple Instance] Another Tram TUI instance is running\n\tRaw error: {0}")]
     MultipleInstance(io::Error),
 
     #[error("[Io Error] {0}")]
     Io(#[from] io::Error),
+    #[error("[Regex Error] {0}")]
+    Regex(#[from] regex::Error),
+    #[error("[Config Parsing Error] Fail to parse config\n\t{0}")]
+    ParseConfigFail(#[from] toml::de::Error),
+    #[error("[Config Generating Error] Fail to parse config\n\t{0}")]
+    GenConfigFail(#[from] toml::ser::Error),
 }
 
 impl AppError {
@@ -37,5 +49,16 @@ impl AppError {
         } else {
             AppError::ChildProcess { command, err_msg }
         }
+    }
+}
+
+pub trait ExplainError {
+    fn explain(self, msg: String) -> AppError;
+}
+
+impl ExplainError for nix::errno::Errno {
+    #[inline]
+    fn explain(self, msg: String) -> AppError {
+        AppError::SystemOperationFail { raw_err: self, msg }
     }
 }
