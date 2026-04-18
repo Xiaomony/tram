@@ -1,32 +1,42 @@
-use crate::{core::error::AppResult, globals};
+use crate::{
+    core::{btrfs_objects::snapshot_group::SnapshotGroup, error::AppResult},
+    globals,
+};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
 
-#[derive(Deserialize, Serialize)]
-struct SnapshotGroupConfig {
-    group_name: String,
-    // a list of pathes to subvolumes
-    subvolumes: Vec<String>,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct AppConfig {
-    groups: Vec<SnapshotGroupConfig>,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AppConfig<'a> {
+    pub snapshot_groups: Vec<SnapshotGroup<'a>>,
     #[serde(skip, default)]
-    first_time_launch: bool,
+    _first_time_launch: bool,
 }
 
-impl AppConfig {
-    pub fn load_config() -> AppResult<AppConfig> {
+impl<'a> AppConfig<'a> {
+    pub fn load_config() -> AppResult<AppConfig<'a>> {
         create_dir_all(&*globals::CONFIG_DIR)?;
         let config_file_path = &*globals::MAIN_CONFIG_FILE_PATH;
         if fs::exists(config_file_path)? {
             let s = std::fs::read_to_string(config_file_path)?;
-            Ok(toml::from_str::<AppConfig>(&s)?)
+            // TEST: test toml serilize
+            let a = toml::from_str::<AppConfig>(&s)?;
+            println!("{a:?}");
+            Ok(a)
+            // Ok(toml::from_str::<AppConfig>(&s)?)
         } else {
+            // TEST: test toml serilize
             let config = Self {
-                groups: Vec::new(),
-                first_time_launch: true,
+                snapshot_groups: vec![
+                    SnapshotGroup::new(
+                        "default".to_string(),
+                        vec!["@".to_string(), "something else".to_string()],
+                    ),
+                    SnapshotGroup::new(
+                        "default2".to_string(),
+                        vec!["@home".to_string(), "something else2".to_string()],
+                    ),
+                ],
+                _first_time_launch: true,
             };
             config.write_config()?;
             Ok(config)
@@ -34,8 +44,8 @@ impl AppConfig {
     }
 
     #[inline]
-    pub fn is_first_time_launch(&self) -> bool {
-        self.first_time_launch
+    pub fn _is_first_time_launch(&self) -> bool {
+        self._first_time_launch
     }
 
     #[inline]
