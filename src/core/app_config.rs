@@ -1,19 +1,19 @@
 use crate::{
-    core::{btrfs_objects::snapshot_group::SnapshotGroup, error::AppResult},
+    core::{btrfs_objects::group::Group, error::AppResult},
     globals,
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct AppConfig<'a> {
-    pub snapshot_groups: Vec<SnapshotGroup<'a>>,
+pub struct AppConfig {
+    pub groups: Vec<Group>,
     #[serde(skip, default)]
     _first_time_launch: bool,
 }
 
-impl<'a> AppConfig<'a> {
-    pub fn load_config() -> AppResult<AppConfig<'a>> {
+impl AppConfig {
+    pub fn load_config() -> AppResult<AppConfig> {
         create_dir_all(&*globals::CONFIG_DIR)?;
         let config_file_path = &*globals::MAIN_CONFIG_FILE_PATH;
         if fs::exists(config_file_path)? {
@@ -26,12 +26,12 @@ impl<'a> AppConfig<'a> {
         } else {
             // TEST: test toml serilize
             let config = Self {
-                snapshot_groups: vec![
-                    SnapshotGroup::new(
+                groups: vec![
+                    Group::new(
                         "default".to_string(),
                         vec!["@".to_string(), "something else".to_string()],
                     ),
-                    SnapshotGroup::new(
+                    Group::new(
                         "default2".to_string(),
                         vec!["@home".to_string(), "something else2".to_string()],
                     ),

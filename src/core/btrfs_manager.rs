@@ -1,6 +1,7 @@
 use std::{
     fs::create_dir_all,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 use file_lock::{FileLock, FileOptions};
@@ -8,7 +9,7 @@ use regex::Regex;
 
 use crate::core::{
     app_config::AppConfig,
-    btrfs_objects::subvolume::Subvolume,
+    btrfs_objects::{snapshot::SubvolumeSnapshot, subvolume::Subvolume},
     error::{AppError, AppResult},
     utils::{
         check_is_btrfs_filesystem, check_root_permission, exec_command, get_crr_os_device,
@@ -17,14 +18,21 @@ use crate::core::{
 };
 use crate::globals;
 
-pub struct BtrfsManager<'a> {
+pub struct BtrfsManager {
     _device: String,
     file_lock: FileLock,
-    subvolumes: Vec<Subvolume>,
-    app_config: AppConfig<'a>,
+    subvolumes: Vec<Rc<Subvolume>>,
+    app_config: AppConfig,
+    /// The application should take a snapshot before recover to a subvolume
+    /// and place it at tram_btrfs/broken/
+    /// Also, snapshots should be store in this variable
+    /// when fail to parse the path, determine the owner group, snapshot type or date and time
+    /// of a snapshot under tram_btrfs/
+    broken_snapshots: Vec<SubvolumeSnapshot>,
 }
 
-impl<'a> BtrfsManager<'a> {
+impl BtrfsManager {
+    /// create an object based on a specified block device
     pub fn new(device: String) -> AppResult<Self> {
         check_root_permission()?;
         let file_lock = Self::create_file_lock()?;
@@ -39,12 +47,14 @@ impl<'a> BtrfsManager<'a> {
             file_lock,
             subvolumes: Vec::new(),
             app_config: AppConfig::load_config()?,
+            broken_snapshots: Vec::new(),
         };
-        new_obj.get_subvolumes()?;
+        new_obj.get_subvolumes_and_snapshots()?;
 
         Ok(new_obj)
     }
 
+    /// create an object based on the partion at which the current system root is located
     pub fn new_default_partion() -> AppResult<Self> {
         Self::new(get_crr_os_device()?)
     }
@@ -64,43 +74,61 @@ impl<'a> BtrfsManager<'a> {
     ID 366 gen 56473 top level 5 path timeshift-btrfs/snapshots/2026-04-16_15-07-30/@home
     ID 369 gen 57190 top level 5 path tram_btrfs/snapshot_groups/default/manually/2026-04-16_21-26-00/@
     */
-    fn get_subvolumes(&mut self) -> AppResult<()> {
+    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<()> {
         let btrfs_output =
             exec_command("btrfs", &["subvolume", "list", "-o", globals::MOUNT_POINT])?;
         let r = Regex::new(r"(?m)^ID.*top level 5 path (.+)$")?;
+
+        // store snapshot paths, snapshots must be parsed after subvolumes is fully added
+        let mut snapshot_raw_pathes = Vec::new();
         for (_, [raw_path]) in r.captures_iter(&btrfs_output).map(|c| c.extract()) {
             if raw_path.starts_with(globals::TOP_DIRECTORY_NAME) {
-                self.parse_snapshot_path(raw_path)?;
+                snapshot_raw_pathes.push(raw_path);
             } else {
+                // TODO: Detect do subvolumes present as `@` and `@home` layout
+                // and setup default snapshot group for first-time launch user
                 self.subvolumes
-                    .push(Subvolume::new(PathBuf::from(raw_path)));
+                    .push(Rc::new(Subvolume::new(PathBuf::from(raw_path))));
             }
+        }
+        for raw_path in snapshot_raw_pathes {
+            self.parse_snapshot_path(raw_path);
         }
         Ok(())
     }
 
-    fn parse_snapshot_path(&self, raw_path: &str) -> AppResult<()> {
+    fn parse_snapshot_path(&mut self, raw_path: &str) {
         let path_parts: Vec<&str> = raw_path.split("/").skip(1).collect();
+        let related_subvolume_path = path_parts[3..].join("/");
 
-        // get group name
-        if let Some(&group_name) = path_parts.first()
-            // find the group it belongs to
-            && let Some(group) = self.app_config.snapshot_groups.iter().find(|&x| x == group_name)
+        // check if the snapshot is under tram_btrfs/snapshot_groups
+        if let Some(&globals::GROUPS_DIRECTORY_NAME) = path_parts.first()
+            // get group name
+            && let Some(&group_name) = path_parts.get(1)
+            // find the group object it belongs to
+            && let Some(group) = self.app_config.groups.iter_mut().find(|x| *x == group_name)
             // get snapshot_types, datetime, name
-            && let Some(&snapshot_type) = path_parts.get(1)
-            && let Some(&datatime) = path_parts.get(2)
-            && let Some(&name) = path_parts.get(3)
+            && let Some(&snapshot_type) = path_parts.get(2)
+            && let Some(&datetime) = path_parts.get(3)
+            // get related subvolume object
+            && let Some(related_subvolume) = self.subvolumes.iter().find(|&x| x.eq(&related_subvolume_path))
         {
-            group.add_snapshot(snapshot_type, datatime, name)?;
+            if !group.add_snapshot(raw_path, snapshot_type, datetime, related_subvolume.clone()) {
+                // regard it as a broken snapshot with related subvolume
+                self.broken_snapshots.push(SubvolumeSnapshot::new(
+                    raw_path,
+                    Some(related_subvolume.clone()),
+                ));
+            }
         } else {
-            // regard it as a broken one
-            todo!()
+            // regard it as a broken snapshot without related subvolume
+            self.broken_snapshots
+                .push(SubvolumeSnapshot::new(raw_path, None));
         }
-        Ok(())
     }
 }
 
-impl Drop for BtrfsManager<'_> {
+impl Drop for BtrfsManager {
     fn drop(&mut self) {
         let _ = self.file_lock.unlock();
         let _ = umount_from_default_point();

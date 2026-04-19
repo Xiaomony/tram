@@ -7,6 +7,7 @@ use std::{
     fs::create_dir_all,
     process::{Command, Stdio},
 };
+use time::{OffsetDateTime, macros::format_description};
 
 /// check if the current program is running as root
 #[inline]
@@ -74,4 +75,16 @@ pub fn mount_to_default_point(device: &str) -> AppResult<()> {
 pub fn umount_from_default_point() -> AppResult<()> {
     mount::umount(globals::MOUNT_POINT)
         .map_err(|e| e.explain(format!("Can't umount from {}", globals::MOUNT_POINT)))
+}
+
+/// return (date, time)
+pub fn get_current_date_time() -> (String, String) {
+    let now = OffsetDateTime::now_local().unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let date = now
+        .format(format_description!("[year]-[month]-[day]"))
+        .unwrap();
+    let time = now
+        .format(format_description!("[hour]:[minute]:[second]"))
+        .unwrap();
+    (date, time)
 }
