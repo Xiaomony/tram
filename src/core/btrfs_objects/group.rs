@@ -1,24 +1,23 @@
-use crate::core::btrfs_objects::{
-    snapshot::{GroupSnapshot, SnapshotType},
-    subvolume::Subvolume,
-};
+use crate::core::btrfs_objects::group_snapshot::{GroupSnapshot, SnapshotType};
+use crate::core::error::{AppError, AppResult, ExtendResult};
+use crate::globals;
 use serde::{Deserialize, Serialize};
-use std::{path::Path, rc::Rc};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Group {
     group_name: String,
     // subvolume pathes loaded from configs
-    subvolumes_config: Vec<String>,
+    subvolumes: Vec<PathBuf>,
     #[serde(skip, default)]
     snapshots: Vec<GroupSnapshot>,
 }
 
 impl Group {
-    pub fn new(group_name: String, subvolumes: Vec<String>) -> Self {
+    pub fn new(group_name: String, subvolumes: Vec<PathBuf>) -> Self {
         Self {
             group_name,
-            subvolumes_config: subvolumes,
+            subvolumes,
             snapshots: Vec::new(),
         }
     }
@@ -34,7 +33,7 @@ impl Group {
         raw_path: T,
         snapshot_type: &str,
         datetime: &str,
-        related_subvolume: Rc<Subvolume>,
+        related_subvolume: PathBuf,
     ) -> bool {
         if let Some(snapshot_type) = SnapshotType::get_type(snapshot_type)
             && let Some((date, time)) = datetime.split_once('_')
@@ -55,6 +54,46 @@ impl Group {
         } else {
             false
         }
+    }
+
+    /// this function guarantee to only cause `ConfigErrSubvolumeNotExist` error
+    /// removed_subvolume: a Vec passed in to store those invalid and removed subvolumes
+    pub fn verify_subvolumes(
+        &mut self,
+        available_subvolumes: &[PathBuf],
+        removed_subvolume: &mut Vec<PathBuf>,
+    ) {
+        let mut i = 0;
+        while i < self.subvolumes.len() {
+            let crr = self.subvolumes.get(i).unwrap();
+            if available_subvolumes.contains(crr) {
+                i += 1;
+            } else {
+                // WARN: here uses `swap_remove`, which won't preserve the original order of subvolumes
+                removed_subvolume.push(self.subvolumes.swap_remove(i));
+            }
+        }
+    }
+
+    pub fn _create_snapshot(&mut self) {
+        // TODO:
+        todo!()
+    }
+
+    pub fn rename_group<T: Into<String>>(&mut self, new_name: T) -> AppResult<()> {
+        let mut err: Result<_, AppError> = Ok(());
+        if !self.snapshots.is_empty() {
+            let new_name = new_name.into();
+            let new_group_path = PathBuf::from(globals::TOP_DIRECTORY_NAME)
+                .join(globals::GROUPS_DIRECTORY_NAME)
+                .join(&new_name);
+            for x in self.snapshots.iter_mut() {
+                // WARN: need test
+                err.chain(x.rename_group_snapshot(&new_group_path));
+            }
+            self.group_name = new_name;
+        }
+        err
     }
 }
 

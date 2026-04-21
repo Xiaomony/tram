@@ -1,12 +1,9 @@
-use crate::{
-    core::error::{AppError, AppResult, ExplainError},
-    globals,
-};
+use crate::core::error::{AppError, AppResult, ExplainError};
+use crate::globals;
 use nix::mount::{self, MsFlags};
-use std::{
-    fs::create_dir_all,
-    process::{Command, Stdio},
-};
+use std::ffi::OsStr;
+use std::fs::create_dir_all;
+use std::process::{Command, Stdio};
 use time::{OffsetDateTime, macros::format_description};
 
 /// check if the current program is running as root
@@ -19,7 +16,7 @@ pub fn check_root_permission() -> AppResult<()> {
     }
 }
 
-pub fn exec_command(command: &'static str, args: &[&str]) -> AppResult<String> {
+pub fn exec_command<T: AsRef<OsStr>>(command: &'static str, args: &[T]) -> AppResult<String> {
     let child_output = Command::new(command)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

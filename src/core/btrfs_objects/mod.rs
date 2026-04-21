@@ -1,3 +1,3 @@
 pub mod group;
-pub mod snapshot;
-pub mod subvolume;
+pub mod group_snapshot;
+pub mod subvolume_snapshot;

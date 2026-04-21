@@ -1,7 +1,6 @@
 use std::{
     fs::create_dir_all,
     path::{Path, PathBuf},
-    rc::Rc,
 };
 
 use file_lock::{FileLock, FileOptions};
@@ -9,7 +8,7 @@ use regex::Regex;
 
 use crate::core::{
     app_config::AppConfig,
-    btrfs_objects::{snapshot::SubvolumeSnapshot, subvolume::Subvolume},
+    btrfs_objects::subvolume_snapshot::SubvolumeSnapshot,
     error::{AppError, AppResult},
     utils::{
         check_is_btrfs_filesystem, check_root_permission, exec_command, get_crr_os_device,
@@ -21,7 +20,7 @@ use crate::globals;
 pub struct BtrfsManager {
     _device: String,
     file_lock: FileLock,
-    subvolumes: Vec<Rc<Subvolume>>,
+    subvolumes: Vec<PathBuf>,
     app_config: AppConfig,
     /// The application should take a snapshot before recover to a subvolume
     /// and place it at tram_btrfs/broken/
@@ -87,10 +86,19 @@ impl BtrfsManager {
             } else {
                 // TODO: Detect do subvolumes present as `@` and `@home` layout
                 // and setup default snapshot group for first-time launch user
-                self.subvolumes
-                    .push(Rc::new(Subvolume::new(PathBuf::from(raw_path))));
+                self.subvolumes.push(PathBuf::from(raw_path));
             }
         }
+        // verify subvolumes in config
+        let mut removed_config_subvols = Vec::new();
+        self.app_config
+            .groups
+            .iter_mut()
+            .for_each(|x| x.verify_subvolumes(&(self.subvolumes), &mut removed_config_subvols));
+        if !removed_config_subvols.is_empty() {
+            return Err(AppError::ConfigErrSubvolumeNotExist(removed_config_subvols));
+        }
+
         for raw_path in snapshot_raw_pathes {
             self.parse_snapshot_path(raw_path);
         }
@@ -99,7 +107,6 @@ impl BtrfsManager {
 
     fn parse_snapshot_path(&mut self, raw_path: &str) {
         let path_parts: Vec<&str> = raw_path.split("/").skip(1).collect();
-        let related_subvolume_path = path_parts[3..].join("/");
 
         // check if the snapshot is under tram_btrfs/snapshot_groups
         if let Some(&globals::GROUPS_DIRECTORY_NAME) = path_parts.first()
@@ -110,7 +117,8 @@ impl BtrfsManager {
             // get snapshot_types, datetime, name
             && let Some(&snapshot_type) = path_parts.get(2)
             && let Some(&datetime) = path_parts.get(3)
-            // get related subvolume object
+            // get related subvolume path
+            && let related_subvolume_path = path_parts[3..].join("/")
             && let Some(related_subvolume) = self.subvolumes.iter().find(|&x| x.eq(&related_subvolume_path))
         {
             if !group.add_snapshot(raw_path, snapshot_type, datetime, related_subvolume.clone()) {

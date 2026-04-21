@@ -29,11 +29,11 @@ impl AppConfig {
                 groups: vec![
                     Group::new(
                         "default".to_string(),
-                        vec!["@".to_string(), "something else".to_string()],
+                        vec!["@".into(), "something else".into()],
                     ),
                     Group::new(
                         "default2".to_string(),
-                        vec!["@home".to_string(), "something else2".to_string()],
+                        vec!["@home".into(), "something else2".into()],
                     ),
                 ],
                 _first_time_launch: true,
