@@ -1,7 +1,9 @@
 use crate::core::btrfs_objects::group_snapshot::{GroupSnapshot, SnapshotType};
 use crate::core::error::{AppError, AppResult, ExtendResult};
+use crate::core::utils::{exec_command, get_current_date_time, mount_point_join};
 use crate::globals;
 use serde::{Deserialize, Serialize};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -75,18 +77,48 @@ impl Group {
         }
     }
 
-    pub fn _create_snapshot(&mut self) {
+    pub fn _create_snapshot(&mut self, snapshot_type: SnapshotType) -> AppResult<()> {
         // TODO:
-        todo!()
+        let (date, time) = get_current_date_time();
+        let snapshot_type_string = snapshot_type.to_string();
+        let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
+            .join(&self.group_name)
+            .join(&snapshot_type_string)
+            .join(format!("{date}_{time}"));
+        let mut new_snapshot = GroupSnapshot::new(date, time, snapshot_type);
+        let mut result: AppResult<()> = Ok(());
+        for subvol in self.subvolumes.iter() {
+            let subvol_fullpath = mount_point_join(subvol);
+            let subvol_snapshot_fullpath = group_snapshot_fullpath.join(&subvol_fullpath);
+            if let Some(p) = subvol_snapshot_fullpath.parent() {
+                create_dir_all(p)?;
+                exec_command(
+                    "btrfs",
+                    &[
+                        "subvolume",
+                        "snapshot",
+                        "-r",
+                        subvol_fullpath.to_string_lossy().as_ref(),
+                        subvol_snapshot_fullpath.to_string_lossy().as_ref(),
+                    ],
+                )?;
+                new_snapshot.add_snapshot(&subvol_snapshot_fullpath, subvol);
+            } else {
+                result.chain_err(AppError::Bug(format!(
+                    "No parent for directory {}",
+                    subvol_snapshot_fullpath.to_string_lossy()
+                )));
+            }
+        }
+        self.snapshots.push(new_snapshot);
+        result
     }
 
     pub fn rename_group<T: Into<String>>(&mut self, new_name: T) -> AppResult<()> {
         let mut err: Result<_, AppError> = Ok(());
         if !self.snapshots.is_empty() {
             let new_name = new_name.into();
-            let new_group_path = PathBuf::from(globals::TOP_DIRECTORY_NAME)
-                .join(globals::GROUPS_DIRECTORY_NAME)
-                .join(&new_name);
+            let new_group_path = globals::SNAPSHOT_GROUP_DIR_PATH.join(&new_name);
             for x in self.snapshots.iter_mut() {
                 // WARN: need test
                 err.chain(x.rename_group_snapshot(&new_group_path));

@@ -1,5 +1,8 @@
 use crate::{
-    core::error::{AppError, AppResult},
+    core::{
+        error::{AppError, AppResult},
+        utils::mount_point_join,
+    },
     globals,
 };
 use std::path::{Path, PathBuf};
@@ -20,11 +23,13 @@ impl SubvolumeSnapshot {
     }
 
     #[inline]
-    pub fn get_fullpath(&self) -> String {
-        PathBuf::from(globals::MOUNT_POINT)
-            .join(&self.path)
-            .to_string_lossy()
-            .to_string()
+    pub fn get_fullpath(&self) -> PathBuf {
+        mount_point_join(&self.path)
+    }
+
+    #[inline]
+    pub fn get_fullpath_string(&self) -> String {
+        self.get_fullpath().to_string_lossy().into()
     }
 
     /// new_group_path: the new path of the group snapshot, not containing mount point

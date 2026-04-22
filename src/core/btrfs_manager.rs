@@ -109,7 +109,7 @@ impl BtrfsManager {
         let path_parts: Vec<&str> = raw_path.split("/").skip(1).collect();
 
         // check if the snapshot is under tram_btrfs/snapshot_groups
-        if let Some(&globals::GROUPS_DIRECTORY_NAME) = path_parts.first()
+        if let Some(&globals::SNAPSHOT_GROUPS_DIR_NAME) = path_parts.first()
             // get group name
             && let Some(&group_name) = path_parts.get(1)
             // find the group object it belongs to

@@ -1,7 +1,6 @@
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
 use crate::core::error::{AppError, AppResult, ExtendResult};
-use crate::core::utils::{exec_command, get_current_date_time};
-use crate::globals;
+use crate::core::utils::exec_command;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 
@@ -71,27 +70,24 @@ impl GroupSnapshot {
             snapshot_type,
         }
     }
-    /// create a new object with current date and time
-    fn _new_at_current_time(snapshot_type: SnapshotType) -> Self {
-        let (date, time) = get_current_date_time();
-        Self {
-            date,
-            time,
-            snapshot_type,
-            subvolume_snapshots: Vec::new(),
-        }
-    }
 
     /// record a snapshot when loading configuration
-    pub fn add_snapshot<T: AsRef<Path>>(&mut self, full_path: T, related_subvolume: PathBuf) {
+    pub fn add_snapshot<T: AsRef<Path>, E: Into<PathBuf>>(
+        &mut self,
+        full_path: T,
+        related_subvolume: E,
+    ) {
         self.subvolume_snapshots.push(SubvolumeSnapshot::new(
             full_path.as_ref().to_path_buf(),
-            Some(related_subvolume),
+            Some(related_subvolume.into()),
         ));
     }
 
     pub fn _delete(self) -> AppResult<()> {
-        let fullpaths = self.subvolume_snapshots.iter().map(|x| x.get_fullpath());
+        let fullpaths = self
+            .subvolume_snapshots
+            .iter()
+            .map(|x| x.get_fullpath_string());
         let args: Vec<String> = ["subvolume".to_string(), "delete".to_string()]
             .into_iter()
             .chain(fullpaths)

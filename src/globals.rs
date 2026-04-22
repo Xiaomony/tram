@@ -22,8 +22,15 @@ The application should take a snapshot before recover to a subvolume and place i
 The application should deny a request to recover a system subvolume
 */
 pub const TOP_DIRECTORY_NAME: &str = "tram_btrfs/";
-pub const GROUPS_DIRECTORY_NAME: &str = "snapshot_groups";
-pub const BROKEN_DIRECTORY_NAME: &str = "broken";
+pub const SNAPSHOT_GROUPS_DIR_NAME: &str = "snapshot_groups";
+pub const BROKEN_DIR_NAME: &str = "broken";
+
+/// equals to PathBuf::from("/run/tram_btrfs/tram_btrfs/snapshot_groups")
+pub static SNAPSHOT_GROUP_DIR_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    PathBuf::from(MOUNT_POINT)
+        .join(TOP_DIRECTORY_NAME)
+        .join(SNAPSHOT_GROUPS_DIR_NAME)
+});
 
 pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     std::env::var("XDG_CONFIG_HOME")

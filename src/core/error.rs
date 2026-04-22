@@ -9,6 +9,8 @@ pub type AppResult<T> = Result<T, AppError>;
 pub enum AppError {
     #[error("[Child Process Error] command '{command}' cause an error:\n\t{err_msg}")]
     ChildProcess {
+        /// Use &'static str to ensure that the command is defined in compile time
+        /// Cause this program need root permission, this forbids external command injection
         command: &'static str,
         err_msg: String,
     },
@@ -92,22 +94,107 @@ impl ExplainError for nix::errno::Errno {
 
 pub trait ExtendResult<T> {
     fn chain(&mut self, new: AppResult<T>);
+    fn chain_err(&mut self, new: AppError);
 }
 
-impl<T> ExtendResult<T> for Result<T, AppError> {
+impl<T> ExtendResult<T> for AppResult<T> {
     fn chain(&mut self, new: AppResult<T>) {
         if let Err(e_new) = new {
-            if let Err(e) = self {
-                *e = std::mem::replace(
-                    e,
-                    AppError::Bug(
-                        "Bug occured inside trait `ExtendResult`, function `chain()`".to_string(),
-                    ),
-                )
-                .chain(e_new);
-            } else {
-                *self = Err(e_new);
-            }
+            self.chain_err(e_new);
+        }
+    }
+    fn chain_err(&mut self, new: AppError) {
+        if let Err(e) = self {
+            *e = std::mem::replace(
+                e,
+                AppError::Bug(
+                    "Bug occured inside trait `ExtendResult`, function `chain()`".to_string(),
+                ),
+            )
+            .chain(new);
+        } else {
+            *self = Err(new);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_apperr_chain() {
+        use AppError::*;
+        let test_str = "test string";
+        {
+            let e1 = NoRootPermission;
+            let e2 = NotBtrfs(test_str.to_string());
+            let chained = e1.chain(e2);
+            assert!(matches!(
+                chained,
+                CombinedError(ref v)
+                    if v.len() == 2
+                    && matches!(v[0], NoRootPermission)
+                    && matches!(v[1], NotBtrfs(ref s) if s == test_str)
+            ));
+        }
+        {
+            let e1 = CombinedError(vec![NoRootPermission, Bug(test_str.to_string())]);
+            let e2 = NotBtrfs(test_str.to_string());
+            let chained = e1.chain(e2);
+            assert!(matches!(
+                chained,
+                CombinedError(ref v)
+                    if v.len() == 3
+                    && matches!(v[0], NoRootPermission)
+                    && matches!(v[1], Bug(ref s) if s == test_str)
+                    && matches!(v[2], NotBtrfs(ref s) if s == test_str)
+            ));
+        }
+        {
+            let e1 = NotBtrfs(test_str.to_string());
+            let e2 = CombinedError(vec![NoRootPermission, Bug(test_str.to_string())]);
+            let chained = e1.chain(e2);
+            assert!(matches!(
+                chained,
+                CombinedError(ref v)
+                    if v.len() == 3
+                        && matches!(v[0], NoRootPermission)
+                        && matches!(v[1], Bug(ref s) if s == test_str)
+                        && matches!(v[2], NotBtrfs(ref s) if s == test_str)
+            ));
+        }
+        {
+            let e1 = CombinedError(vec![NotBtrfs(test_str.to_string())]);
+            let e2 = CombinedError(vec![NoRootPermission, Bug(test_str.to_string())]);
+            let chained = e1.chain(e2);
+            assert!(matches!(
+                chained,
+                CombinedError(ref v)
+                    if v.len() == 3
+                        && matches!(v[0], NotBtrfs(ref s) if s == test_str)
+                        && matches!(v[1], NoRootPermission)
+                        && matches!(v[2], Bug(ref s) if s == test_str)
+            ));
+        }
+    }
+
+    #[test]
+    fn test_result_chain() {
+        use AppError::*;
+        {
+            let mut r1: AppResult<()> = Ok(());
+            let r2: AppResult<()> = Err(NoRootPermission);
+            r1.chain(r2);
+            assert!(matches!(r1, Err(NoRootPermission)));
+        }
+        {
+            let mut r1: AppResult<()> = Err(NoRootPermission);
+            let r2: AppResult<()> = Err(NoRootPermission);
+            r1.chain(r2);
+            assert!(matches!(r1, Err(CombinedError(ref v))
+                    if v.len() == 2
+                    && matches!(v[0], NoRootPermission)
+                    && matches!(v[1], NoRootPermission)));
         }
     }
 }

@@ -3,6 +3,7 @@ use crate::globals;
 use nix::mount::{self, MsFlags};
 use std::ffi::OsStr;
 use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use time::{OffsetDateTime, macros::format_description};
 
@@ -72,6 +73,12 @@ pub fn mount_to_default_point(device: &str) -> AppResult<()> {
 pub fn umount_from_default_point() -> AppResult<()> {
     mount::umount(globals::MOUNT_POINT)
         .map_err(|e| e.explain(format!("Can't umount from {}", globals::MOUNT_POINT)))
+}
+
+#[inline]
+/// join the given path to the mount point
+pub fn mount_point_join<T: AsRef<Path>>(path: T) -> PathBuf {
+    PathBuf::from(globals::MOUNT_POINT).join(path)
 }
 
 /// return (date, time)
