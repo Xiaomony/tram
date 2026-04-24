@@ -1,20 +1,13 @@
-use std::{
-    fs::create_dir_all,
-    path::{Path, PathBuf},
-};
-
 use file_lock::{FileLock, FileOptions};
 use regex::Regex;
+use std::fs::create_dir_all;
+use std::path::{Path, PathBuf};
 
-use crate::core::{
-    app_config::AppConfig,
-    btrfs_objects::subvolume_snapshot::SubvolumeSnapshot,
-    error::{AppError, AppResult},
-    utils::{
-        check_is_btrfs_filesystem, check_root_permission, exec_command, get_crr_os_device,
-        mount_to_default_point, umount_from_default_point,
-    },
-};
+use crate::core::app_config::AppConfig;
+use crate::core::btrfs_objects::snapshot_type::SnapshotType;
+use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
+use crate::core::error::{AppError, AppResult, throw_invalid_index};
+use crate::core::utils::*;
 use crate::globals;
 
 pub struct BtrfsManager {
@@ -133,6 +126,45 @@ impl BtrfsManager {
             self.broken_snapshots
                 .push(SubvolumeSnapshot::new(raw_path, None));
         }
+    }
+
+    pub fn create_snapshot(&mut self, index: usize, snapshot_type: SnapshotType) -> AppResult<()> {
+        let Some(group) = self.app_config.groups.get_mut(index) else {
+            return throw_invalid_index(index, "creating snapshot");
+        };
+        group.create_snapshot(snapshot_type)
+    }
+
+    pub fn delete_snapshot(&mut self, group_index: usize, snapshot_index: usize) -> AppResult<()> {
+        let Some(group) = self.app_config.groups.get_mut(group_index) else {
+            return throw_invalid_index(group_index, "deleting snapshot(invalid group index)");
+        };
+        group.delete_snapshot(snapshot_index)
+    }
+
+    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> AppResult<()> {
+        let Some(group) = self.app_config.groups.get_mut(index) else {
+            return throw_invalid_index(index, "renaming group");
+        };
+        group.rename_group(new_name)
+    }
+
+    pub fn add_subvol_to_group(
+        &mut self,
+        group_index: usize,
+        subvol_index: usize,
+    ) -> AppResult<()> {
+        let Some(subvol) = self.subvolumes.get(subvol_index) else {
+            return throw_invalid_index(
+                subvol_index,
+                "add subvolume to group(invalid subvolume index)",
+            );
+        };
+        let Some(group) = self.app_config.groups.get_mut(group_index) else {
+            return throw_invalid_index(group_index, "add subvolume to group(invalid group index)");
+        };
+        group.add_subvolume(subvol);
+        Ok(())
     }
 }
 

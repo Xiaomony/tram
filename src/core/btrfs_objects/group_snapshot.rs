@@ -1,54 +1,8 @@
+use crate::core::btrfs_objects::snapshot_type::SnapshotType;
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
 use crate::core::error::{AppError, AppResult, ExtendResult};
 use crate::core::utils::exec_command;
-use std::fmt::Display;
 use std::path::{Path, PathBuf};
-
-#[derive(Debug, PartialEq)]
-pub enum SnapshotType {
-    Manually,
-    Daily,
-    Monthly,
-    Weekly,
-}
-
-impl SnapshotType {
-    pub fn get_type(string: &str) -> Option<Self> {
-        match string {
-            "Manually" | "manually" => Some(SnapshotType::Manually),
-            "Daily" | "daily" => Some(SnapshotType::Daily),
-            "Monthly" | "monthly" => Some(SnapshotType::Monthly),
-            "Weekly" | "weekly" => Some(SnapshotType::Weekly),
-            _ => None,
-        }
-    }
-}
-
-impl Display for SnapshotType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Manually => "manually",
-                Self::Daily => "daily",
-                Self::Weekly => "weekly",
-                Self::Monthly => "monthly",
-            }
-        )
-    }
-}
-
-impl AsRef<str> for SnapshotType {
-    fn as_ref(&self) -> &str {
-        match self {
-            Self::Manually => "manually",
-            Self::Daily => "daily",
-            Self::Weekly => "weekly",
-            Self::Monthly => "monthly",
-        }
-    }
-}
 
 #[derive(Debug)]
 /// Snapshots of a group
@@ -83,7 +37,7 @@ impl GroupSnapshot {
         ));
     }
 
-    pub fn _delete(self) -> AppResult<()> {
+    pub fn delete(self) -> AppResult<()> {
         let fullpaths = self
             .subvolume_snapshots
             .iter()

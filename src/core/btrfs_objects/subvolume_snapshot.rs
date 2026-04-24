@@ -1,10 +1,6 @@
-use crate::{
-    core::{
-        error::{AppError, AppResult},
-        utils::mount_point_join,
-    },
-    globals,
-};
+use crate::core::error::{AppError, AppResult};
+use crate::core::utils::mount_point_join;
+use crate::globals;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]

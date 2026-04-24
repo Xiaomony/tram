@@ -15,7 +15,8 @@ the btrfs partion
             │   └── 2026-04-16_21:26:00
             │       └── path/to/related/subvolume
             ├── monthly
-            └── weekly
+            ├── weekly
+            └── boot
 
 snapshot folder name format: yyyy-mm-dd_hh-MM-ss
 The application should take a snapshot before recover to a subvolume and place it at `tram_btrfs/broken/`

@@ -118,6 +118,18 @@ impl<T> ExtendResult<T> for AppResult<T> {
     }
 }
 
+#[inline]
+pub fn throw_bug<T: Into<String>, E>(msg: T) -> AppResult<E> {
+    Err(AppError::Bug(msg.into()))
+}
+#[inline]
+pub fn throw_invalid_index<T: Into<String>, E>(index: usize, period: T) -> AppResult<E> {
+    throw_bug(format!(
+        "Invalid index({index}) occurs when {}",
+        period.into()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

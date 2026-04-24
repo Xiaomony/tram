@@ -1,5 +1,6 @@
-use crate::core::btrfs_objects::group_snapshot::{GroupSnapshot, SnapshotType};
-use crate::core::error::{AppError, AppResult, ExtendResult};
+use crate::core::btrfs_objects::group_snapshot::GroupSnapshot;
+use crate::core::btrfs_objects::snapshot_type::SnapshotType;
+use crate::core::error::{AppError, AppResult, ExtendResult, throw_invalid_index};
 use crate::core::utils::{exec_command, get_current_date_time, mount_point_join};
 use crate::globals;
 use serde::{Deserialize, Serialize};
@@ -77,8 +78,7 @@ impl Group {
         }
     }
 
-    pub fn _create_snapshot(&mut self, snapshot_type: SnapshotType) -> AppResult<()> {
-        // TODO:
+    pub fn create_snapshot(&mut self, snapshot_type: SnapshotType) -> AppResult<()> {
         let (date, time) = get_current_date_time();
         let snapshot_type_string = snapshot_type.to_string();
         let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
@@ -126,6 +126,20 @@ impl Group {
             self.group_name = new_name;
         }
         err
+    }
+
+    pub fn delete_snapshot(&mut self, index: usize) -> AppResult<()> {
+        if index >= self.snapshots.len() {
+            return throw_invalid_index(index, "deleting snapshot(invalid snapshot index)");
+        }
+        let snapshot = self.snapshots.remove(index);
+        snapshot.delete()
+    }
+
+    #[inline]
+    /// add a subvolume to this group, `subvol_path` should be valid
+    pub fn add_subvolume<T: Into<PathBuf>>(&mut self, subvol_path: T) {
+        self.subvolumes.push(subvol_path.into())
     }
 }
 

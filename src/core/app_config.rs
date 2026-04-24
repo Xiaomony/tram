@@ -1,12 +1,29 @@
-use crate::{
-    core::{btrfs_objects::group::Group, error::AppResult},
-    globals,
-};
+use crate::core::{btrfs_objects::group::Group, error::AppResult};
+use crate::globals;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct AutoSnapshotSchedule {
+    pub daily_max: usize,
+    pub weekly_max: usize,
+    pub monthly_max: usize,
+    pub boot_max: usize,
+}
+impl AutoSnapshotSchedule {
+    #[inline]
+    pub fn new_default() -> Self {
+        Self {
+            daily_max: 0,
+            monthly_max: 0,
+            weekly_max: 0,
+            boot_max: 0,
+        }
+    }
+}
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AppConfig {
+    pub schedule: AutoSnapshotSchedule,
     pub groups: Vec<Group>,
     #[serde(skip, default)]
     _first_time_launch: bool,
@@ -26,6 +43,7 @@ impl AppConfig {
         } else {
             // TEST: test toml serilize
             let config = Self {
+                schedule: AutoSnapshotSchedule::new_default(),
                 groups: vec![
                     Group::new(
                         "default".to_string(),
