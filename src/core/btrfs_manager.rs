@@ -29,19 +29,28 @@ impl BtrfsManager {
         check_root_permission()?;
         let file_lock = Self::create_file_lock()?;
         check_is_btrfs_filesystem(&device)?;
+        // load config before mount the device
+        // to make sure if this fails, the device won't be mounted
+        let app_config = AppConfig::load_config()?;
+
         mount_to_default_point(&device)?;
-
-        // create a directory to store snapshots under the mounted device
-        create_dir_all(Path::new(globals::MOUNT_POINT).join(globals::TOP_DIRECTORY_NAME))?;
-
+        // create a temporary object here to make sure
+        // if subsequent operations fail, drop() will be executed
+        // to release file lock and unmount the device
         let mut new_obj = Self {
             _device: device,
             file_lock,
             subvolumes: Vec::new(),
-            app_config: AppConfig::load_config()?,
+            app_config,
             broken_snapshots: Vec::new(),
         };
-        new_obj.get_subvolumes_and_snapshots()?;
+        // create a directory to store snapshots under the mounted device
+        create_dir_all(Path::new(globals::MOUNT_POINT).join(globals::TOP_DIRECTORY_NAME))?;
+        // add default group for new user whose subvolume layout satisfies `@` and `@home`
+        if new_obj.get_subvolumes_and_snapshots()? && new_obj.app_config.is_first_time_launch() {
+            new_obj.app_config.add_new_group("@");
+            new_obj.app_config.add_new_group("@home");
+        }
 
         Ok(new_obj)
     }
@@ -59,17 +68,14 @@ impl BtrfsManager {
         }
     }
 
-    /*
-    ID 256 gen 57067 top level 5 path @
-    ID 257 gen 57067 top level 5 path @home
-    ID 365 gen 56472 top level 5 path timeshift-btrfs/snapshots/2026-04-16_15-07-30/@
-    ID 366 gen 56473 top level 5 path timeshift-btrfs/snapshots/2026-04-16_15-07-30/@home
-    ID 369 gen 57190 top level 5 path tram_btrfs/snapshot_groups/default/manually/2026-04-16_21-26-00/@
-    */
-    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<()> {
+    /// returns if the subvolume layout satisfies `@` and `@home`
+    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<bool> {
         let btrfs_output =
             exec_command("btrfs", &["subvolume", "list", "-o", globals::MOUNT_POINT])?;
         let r = Regex::new(r"(?m)^ID.*top level 5 path (.+)$")?;
+
+        let mut layout_at = false; // is there a `@` subvolume
+        let mut layout_at_home = false; // is there a `@home` subvolume
 
         // store snapshot paths, snapshots must be parsed after subvolumes is fully added
         let mut snapshot_raw_pathes = Vec::new();
@@ -77,8 +83,8 @@ impl BtrfsManager {
             if raw_path.starts_with(globals::TOP_DIRECTORY_NAME) {
                 snapshot_raw_pathes.push(raw_path);
             } else {
-                // TODO: Detect do subvolumes present as `@` and `@home` layout
-                // and setup default snapshot group for first-time launch user
+                layout_at = layout_at || raw_path == "@";
+                layout_at_home = layout_at_home || raw_path == "@home";
                 self.subvolumes.push(PathBuf::from(raw_path));
             }
         }
@@ -95,7 +101,7 @@ impl BtrfsManager {
         for raw_path in snapshot_raw_pathes {
             self.parse_snapshot_path(raw_path);
         }
-        Ok(())
+        Ok(layout_at && layout_at_home)
     }
 
     fn parse_snapshot_path(&mut self, raw_path: &str) {

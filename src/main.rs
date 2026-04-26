@@ -1,5 +1,6 @@
 mod core;
 mod globals;
+mod tui;
 use color_eyre::Result;
 use crossterm::event::{self, Event};
 use ratatui::{DefaultTerminal, Frame};
@@ -7,9 +8,9 @@ use ratatui::{DefaultTerminal, Frame};
 use crate::core::btrfs_manager::BtrfsManager;
 
 fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
     let _mgr = BtrfsManager::new_default_partion()?;
 
-    color_eyre::install()?;
     let terminal = ratatui::init();
     let result = run(terminal);
     ratatui::restore();
