@@ -17,12 +17,15 @@ pub fn check_root_permission() -> AppResult<()> {
     }
 }
 
-pub fn exec_command<T: AsRef<OsStr>>(command: &'static str, args: &[T]) -> AppResult<String> {
+pub fn exec_command<T: AsRef<OsStr>, E: AsRef<[T]>>(
+    command: &'static str,
+    args: E,
+) -> AppResult<String> {
     let child_output = Command::new(command)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .args(args)
+        .args(args.as_ref())
         .output()?;
     if child_output.status.success() {
         Ok(String::from_utf8_lossy(&child_output.stdout).to_string())
@@ -34,14 +37,14 @@ pub fn exec_command<T: AsRef<OsStr>>(command: &'static str, args: &[T]) -> AppRe
 
 #[inline]
 pub fn get_crr_os_device() -> AppResult<String> {
-    exec_command("findmnt", &["-no", "SOURCE", "/"])
+    exec_command("findmnt", ["-no", "SOURCE", "/"])
         .map(|x| x.split_once('[').map(|t| t.0.to_string()).unwrap_or(x))
 }
 
 /// check whether the given device is a btrfs filesystem
 /// raise_error: if true, raise an error instead of return Ok(false)
 pub fn check_is_btrfs_filesystem(device: &str) -> AppResult<()> {
-    let output = exec_command("findmnt", &["-no", "FSTYPE", device])?;
+    let output = exec_command("findmnt", ["-no", "FSTYPE", device])?;
     let result = output.trim().split('\n').all(|t| t == "btrfs");
     if result {
         Ok(())

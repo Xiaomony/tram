@@ -1,5 +1,5 @@
 use crate::core::error::{AppError, AppResult};
-use crate::core::utils::mount_point_join;
+use crate::core::utils::{exec_command, mount_point_join};
 use crate::globals;
 use std::path::{Path, PathBuf};
 
@@ -37,6 +37,20 @@ impl SubvolumeSnapshot {
     pub fn move_snapshot<T: AsRef<Path>>(&mut self, new_group_snapshot_path: T) -> AppResult<()> {
         let mount_point = PathBuf::from(globals::MOUNT_POINT);
         let oldpath = mount_point.join(&self.path);
+        // erase its readonly property
+        exec_command(
+            "btrfs",
+            [
+                "property",
+                "set",
+                "-t",
+                "subvol",
+                oldpath.to_string_lossy().as_ref(),
+                "ro",
+                "false",
+            ],
+        )?;
+
         let Some(subvol_path) = self.related_subvolume.as_ref() else {
             return Err(AppError::Bug(format!(
                 "No related subvolume when moving snapshot:\n\tfrom: {:?}\n\tto: {:?}",
@@ -46,7 +60,22 @@ impl SubvolumeSnapshot {
         };
         let newpath = mount_point.join(new_group_snapshot_path).join(subvol_path);
         std::fs::create_dir_all(&newpath)?;
-        std::fs::rename(oldpath, newpath)?;
+        std::fs::rename(oldpath, &newpath)?;
+
+        // set the moved snapshot to readonly
+        exec_command(
+            "btrfs",
+            [
+                "property",
+                "set",
+                "-t",
+                "subvol",
+                newpath.to_string_lossy().as_ref(),
+                "ro",
+                "true",
+            ],
+        )?;
+
         Ok(())
     }
 }

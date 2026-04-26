@@ -1,9 +1,11 @@
+use crate::core::error::throw_invalid_index;
 use crate::core::{btrfs_objects::group::Group, error::AppResult};
 use crate::globals;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
+use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct AutoSnapshotSchedule {
     pub daily_max: usize,
     pub weekly_max: usize,
@@ -20,10 +22,27 @@ impl AutoSnapshotSchedule {
             boot_max: 0,
         }
     }
+    #[inline]
+    pub fn _change_daily(&mut self, new: usize) {
+        self.daily_max = new;
+    }
+    #[inline]
+    pub fn _change_weekly(&mut self, new: usize) {
+        self.weekly_max = new;
+    }
+    #[inline]
+    pub fn _change_monthly(&mut self, new: usize) {
+        self.monthly_max = new;
+    }
+    #[inline]
+    pub fn _change_boot(&mut self, new: usize) {
+        self.boot_max = new;
+    }
 }
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AppConfig {
-    pub schedule: AutoSnapshotSchedule,
+    schedule: AutoSnapshotSchedule,
     pub groups: Vec<Group>,
     #[serde(skip, default)]
     first_time_launch: bool,
@@ -39,10 +58,6 @@ impl AppConfig {
         } else {
             let config = Self {
                 schedule: AutoSnapshotSchedule::new_default(),
-                // groups: vec![
-                //     Group::new("default".to_string(), vec!["@".into(), "@home".into()]),
-                //     Group::new("default2".to_string(), vec!["@home".into(), "@".into()]),
-                // ],
                 groups: Vec::new(),
                 first_time_launch: true,
             };
@@ -63,7 +78,32 @@ impl AppConfig {
     }
 
     #[inline]
-    pub fn add_new_group<T: Into<String>>(&mut self, group_name: T) {
-        self.groups.push(Group::new(group_name.into(), Vec::new()));
+    pub fn add_new_group<T: Into<String>>(
+        &mut self,
+        group_name: T,
+        subvolumes: Vec<PathBuf>,
+    ) -> AppResult<()> {
+        self.groups.push(Group::new(group_name.into(), subvolumes));
+        self.write_config()
+    }
+
+    #[inline]
+    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> AppResult<()> {
+        let Some(group) = self.groups.get_mut(index) else {
+            return throw_invalid_index(index, "renaming group");
+        };
+        group.rename_group(new_name)?;
+        self.write_config()
+    }
+
+    #[inline]
+    pub fn get_schedule(&self) -> AutoSnapshotSchedule {
+        self.schedule
+    }
+
+    #[inline]
+    pub fn change_schedule(&mut self, new_schedule: AutoSnapshotSchedule) -> AppResult<()> {
+        self.schedule = new_schedule;
+        self.write_config()
     }
 }

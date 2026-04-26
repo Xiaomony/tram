@@ -4,7 +4,7 @@ use crate::core::error::{AppError, AppResult, ExtendResult, throw_invalid_index}
 use crate::core::utils::{exec_command, get_current_date_time, mount_point_join};
 use crate::globals;
 use serde::{Deserialize, Serialize};
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -80,21 +80,20 @@ impl Group {
 
     pub fn create_snapshot(&mut self, snapshot_type: SnapshotType) -> AppResult<()> {
         let (date, time) = get_current_date_time();
-        let snapshot_type_string = snapshot_type.to_string();
         let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
             .join(&self.group_name)
-            .join(&snapshot_type_string)
+            .join(snapshot_type.as_ref())
             .join(format!("{date}_{time}"));
         let mut new_snapshot = GroupSnapshot::new(date, time, snapshot_type);
         let mut result: AppResult<()> = Ok(());
         for subvol in self.subvolumes.iter() {
             let subvol_fullpath = mount_point_join(subvol);
-            let subvol_snapshot_fullpath = group_snapshot_fullpath.join(&subvol_fullpath);
+            let subvol_snapshot_fullpath = group_snapshot_fullpath.join(subvol);
             if let Some(p) = subvol_snapshot_fullpath.parent() {
                 create_dir_all(p)?;
                 exec_command(
                     "btrfs",
-                    &[
+                    [
                         "subvolume",
                         "snapshot",
                         "-r",
@@ -115,16 +114,20 @@ impl Group {
     }
 
     pub fn rename_group<T: Into<String>>(&mut self, new_name: T) -> AppResult<()> {
-        let mut err: Result<_, AppError> = Ok(());
-        if !self.snapshots.is_empty() {
-            let new_name = new_name.into();
-            let new_group_path = globals::SNAPSHOT_GROUP_DIR_PATH.join(&new_name);
-            for x in self.snapshots.iter_mut() {
-                // WARN: need test
-                err.chain(x.rename_group_snapshot(&new_group_path));
-            }
-            self.group_name = new_name;
+        let new_name = new_name.into();
+        if self.group_name == new_name {
+            return Ok(());
         }
+        let mut err: Result<_, AppError> = Ok(());
+        let new_group_path = globals::SNAPSHOT_GROUP_DIR_PATH.join(&new_name);
+        create_dir_all(&new_group_path)?;
+        for x in self.snapshots.iter_mut() {
+            // WARN: need test
+            err.chain(x.rename_group_snapshot(&new_group_path));
+        }
+        // remove old directory
+        let old_name = std::mem::replace(&mut self.group_name, new_name);
+        remove_dir_all(globals::SNAPSHOT_GROUP_DIR_PATH.join(old_name))?;
         err
     }
 
@@ -133,7 +136,7 @@ impl Group {
             return throw_invalid_index(index, "deleting snapshot(invalid snapshot index)");
         }
         let snapshot = self.snapshots.remove(index);
-        snapshot.delete()
+        snapshot.delete(&self.group_name)
     }
 
     #[inline]

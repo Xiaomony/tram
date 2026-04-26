@@ -45,12 +45,11 @@ impl BtrfsManager {
             broken_snapshots: Vec::new(),
         };
         // create a directory to store snapshots under the mounted device
-        create_dir_all(Path::new(globals::MOUNT_POINT).join(globals::TOP_DIRECTORY_NAME))?;
-        // add default group for new user whose subvolume layout satisfies `@` and `@home`
-        if new_obj.get_subvolumes_and_snapshots()? && new_obj.app_config.is_first_time_launch() {
-            new_obj.app_config.add_new_group("@");
-            new_obj.app_config.add_new_group("@home");
-        }
+        create_dir_all(&*globals::SNAPSHOT_GROUP_DIR_PATH)?;
+        // create a directory to store broken subvolumes
+        // (when recovering a snapshot to a subvolume, it will be regarded as a broken one)
+        create_dir_all(globals::TOP_DIR_PATH.join(globals::BROKEN_DIR_NAME))?;
+        new_obj.get_subvolumes_and_snapshots()?;
 
         Ok(new_obj)
     }
@@ -69,9 +68,9 @@ impl BtrfsManager {
     }
 
     /// returns if the subvolume layout satisfies `@` and `@home`
-    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<bool> {
+    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<()> {
         let btrfs_output =
-            exec_command("btrfs", &["subvolume", "list", "-o", globals::MOUNT_POINT])?;
+            exec_command("btrfs", ["subvolume", "list", "-o", globals::MOUNT_POINT])?;
         let r = Regex::new(r"(?m)^ID.*top level 5 path (.+)$")?;
 
         let mut layout_at = false; // is there a `@` subvolume
@@ -98,10 +97,17 @@ impl BtrfsManager {
             return Err(AppError::ConfigErrSubvolumeNotExist(removed_config_subvols));
         }
 
+        // add default group for new user whose subvolume layout satisfies `@` and `@home`
+        // do this before parsing snapshots
+        if layout_at && layout_at_home && self.app_config.is_first_time_launch() {
+            self.app_config
+                .add_new_group("default", vec!["@".into(), "@home".into()])?;
+        }
+
         for raw_path in snapshot_raw_pathes {
             self.parse_snapshot_path(raw_path);
         }
-        Ok(layout_at && layout_at_home)
+        Ok(())
     }
 
     fn parse_snapshot_path(&mut self, raw_path: &str) {
@@ -117,7 +123,7 @@ impl BtrfsManager {
             && let Some(&snapshot_type) = path_parts.get(2)
             && let Some(&datetime) = path_parts.get(3)
             // get related subvolume path
-            && let related_subvolume_path = path_parts[3..].join("/")
+            && let related_subvolume_path = path_parts[4..].join("/")
             && let Some(related_subvolume) = self.subvolumes.iter().find(|&x| x.eq(&related_subvolume_path))
         {
             if !group.add_snapshot(raw_path, snapshot_type, datetime, related_subvolume.clone()) {
@@ -148,11 +154,9 @@ impl BtrfsManager {
         group.delete_snapshot(snapshot_index)
     }
 
+    #[inline]
     pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> AppResult<()> {
-        let Some(group) = self.app_config.groups.get_mut(index) else {
-            return throw_invalid_index(index, "renaming group");
-        };
-        group.rename_group(new_name)
+        self.app_config.rename_group(index, new_name)
     }
 
     pub fn add_subvol_to_group(

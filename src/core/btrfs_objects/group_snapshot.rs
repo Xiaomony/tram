@@ -2,6 +2,8 @@ use crate::core::btrfs_objects::snapshot_type::SnapshotType;
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
 use crate::core::error::{AppError, AppResult, ExtendResult};
 use crate::core::utils::exec_command;
+use crate::globals;
+use std::fs::remove_dir_all;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
@@ -37,7 +39,7 @@ impl GroupSnapshot {
         ));
     }
 
-    pub fn delete(self) -> AppResult<()> {
+    pub fn delete(self, group_name: &str) -> AppResult<()> {
         let fullpaths = self
             .subvolume_snapshots
             .iter()
@@ -46,7 +48,14 @@ impl GroupSnapshot {
             .into_iter()
             .chain(fullpaths)
             .collect();
-        exec_command("btrfs", &args)?;
+        exec_command("btrfs", args)?;
+
+        // remove the directory of the current snapshot group
+        let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
+            .join(group_name)
+            .join(self.snapshot_type.as_ref())
+            .join(self.date + "_" + &self.time);
+        remove_dir_all(group_snapshot_fullpath)?;
         Ok(())
     }
 
