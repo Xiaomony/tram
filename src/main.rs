@@ -1,16 +1,15 @@
 mod core;
 mod globals;
 mod tui;
-use color_eyre::Result;
-use crossterm::event::{self, Event};
-use ratatui::{DefaultTerminal, Frame};
 
-use crate::core::btrfs_manager::BtrfsManager;
+use color_eyre::Result;
+use ratatui::{DefaultTerminal, Frame};
+use std::{cell::RefCell, rc::Rc};
+
+use crate::{core::btrfs_manager::BtrfsManager, tui::app_tui::AppTUI};
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-    let _mgr = BtrfsManager::new_default_partion()?;
-
     let terminal = ratatui::init();
     let result = run(terminal);
     ratatui::restore();
@@ -18,14 +17,13 @@ fn main() -> color_eyre::Result<()> {
 }
 
 fn run(mut terminal: DefaultTerminal) -> Result<()> {
+    let mgr = Rc::new(RefCell::new(BtrfsManager::new_default_partion()?));
+    let mut tui = AppTUI::new(mgr.clone());
+
     loop {
-        terminal.draw(render)?;
-        if matches!(event::read()?, Event::Key(_)) {
+        terminal.draw(|frame: &mut Frame| tui.render(frame))?;
+        if tui.read_events()? {
             break Ok(());
         }
     }
-}
-
-fn render(frame: &mut Frame) {
-    frame.render_widget("hello world", frame.area());
 }

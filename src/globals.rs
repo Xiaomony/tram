@@ -41,3 +41,11 @@ pub static CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 pub static MAIN_CONFIG_FILE_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| (*CONFIG_DIR).join("tram.toml"));
+
+// TUI constants
+pub const MENU_ITEMS: [&str; 4] = [
+    "  Settings ",
+    "  Snapshots ",
+    "  Groups ",
+    " 󰨖 Subvolumes ",
+];
