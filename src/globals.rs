@@ -1,4 +1,6 @@
 use std::{path::PathBuf, sync::LazyLock};
+
+use crate::tui::ui_states::Menu;
 pub const MOUNT_POINT: &str = "/run/tram_btrfs/";
 pub const FILE_LOCK: &str = "/run/tram_btrfs.lock";
 /**
@@ -43,9 +45,16 @@ pub static MAIN_CONFIG_FILE_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| (*CONFIG_DIR).join("tram.toml"));
 
 // TUI constants
-pub const MENU_ITEMS: [&str; 4] = [
-    "  Settings ",
-    "  Snapshots ",
-    "  Groups ",
-    " 󰨖 Subvolumes ",
+pub const MENU_ITEMS: [Menu; 5] = [
+    Menu::Snapshots,
+    Menu::Groups,
+    Menu::Subvolumes,
+    Menu::BrokenSnapshots,
+    Menu::Settings,
 ];
+// pub const MENU_ITEMS: [&str; 4] = [
+//     "  Snapshots ",
+//     "  Groups ",
+//     " 󰨖 Subvolumes ",
+//     "  Settings ",
+// ];

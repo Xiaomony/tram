@@ -144,6 +144,11 @@ impl Group {
     pub fn add_subvolume<T: Into<PathBuf>>(&mut self, subvol_path: T) {
         self.subvolumes.push(subvol_path.into())
     }
+
+    #[inline]
+    pub fn get_snapshots(&self) -> &Vec<GroupSnapshot> {
+        &self.snapshots
+    }
 }
 
 impl PartialEq<str> for Group {

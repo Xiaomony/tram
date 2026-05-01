@@ -1,9 +1,10 @@
 use file_lock::{FileLock, FileOptions};
 use regex::Regex;
 use std::fs::create_dir_all;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::core::app_config::AppConfig;
+use crate::core::btrfs_objects::group::Group;
 use crate::core::btrfs_objects::snapshot_type::SnapshotType;
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
 use crate::core::error::{AppError, AppResult, throw_invalid_index};
@@ -175,6 +176,11 @@ impl BtrfsManager {
         };
         group.add_subvolume(subvol);
         Ok(())
+    }
+
+    #[inline]
+    pub fn get_groups(&self) -> &Vec<Group> {
+        self.app_config.groups.as_ref()
     }
 }
 

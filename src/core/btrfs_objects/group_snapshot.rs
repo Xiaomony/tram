@@ -77,6 +77,21 @@ impl GroupSnapshot {
         }
         err
     }
+
+    #[inline]
+    pub fn get_type(&self) -> SnapshotType {
+        self.snapshot_type
+    }
+
+    #[inline]
+    pub fn get_date(&self) -> String {
+        self.date.clone()
+    }
+
+    #[inline]
+    pub fn get_time(&self) -> String {
+        self.time.clone()
+    }
 }
 
 impl PartialEq<(&str, &str, &SnapshotType)> for GroupSnapshot {

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum SnapshotType {
     Manually,
     Daily,
@@ -24,28 +24,19 @@ impl SnapshotType {
 
 impl Display for SnapshotType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Manually => "manually",
-                Self::Daily => "daily",
-                Self::Weekly => "weekly",
-                Self::Monthly => "monthly",
-                Self::Boot => "boot",
-            }
-        )
+        write!(f, "{}", self.as_ref())
     }
 }
 
 impl AsRef<str> for SnapshotType {
     fn as_ref(&self) -> &str {
+        use SnapshotType::*;
         match self {
-            Self::Manually => "manually",
-            Self::Daily => "daily",
-            Self::Weekly => "weekly",
-            Self::Monthly => "monthly",
-            Self::Boot => "boot",
+            Manually => "manually",
+            Daily => "daily",
+            Weekly => "weekly",
+            Monthly => "monthly",
+            Boot => "boot",
         }
     }
 }
