@@ -2,13 +2,6 @@ use ratatui::text::{Line, Text};
 use std::fmt::Display;
 
 #[derive(Clone, Copy)]
-pub enum Focus {
-    Menu,
-    ManualSnapshots,
-    ScheduledSnapshots,
-}
-
-#[derive(Clone, Copy)]
 pub enum Menu {
     Snapshots,
     Groups,
