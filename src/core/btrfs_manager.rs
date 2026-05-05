@@ -182,6 +182,11 @@ impl BtrfsManager {
     pub fn get_groups(&self) -> &Vec<Group> {
         self.app_config.groups.as_ref()
     }
+
+    #[inline]
+    pub fn get_groups_mut(&mut self) -> &mut Vec<Group> {
+        &mut self.app_config.groups
+    }
 }
 
 impl Drop for BtrfsManager {

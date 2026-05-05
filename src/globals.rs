@@ -59,10 +59,5 @@ pub const WARNING_COLOR: Color = Color::Red;
 
 pub const FOCUSED_COLOR: Color = Color::Rgb(234, 168, 128);
 // pub const FOCUSED_COLOR: Color = Color::LightYellow;
-pub const FOCUSED_HIGHLIHGT_BG_COLOR: Color = FOCUSED_COLOR;
-
 pub const MENU_COLOR: Color = Color::Cyan;
-pub const MENU_HIGHLIGHT_BG_COLOR: Color = Color::LightCyan;
-
 pub const BODY_COLOR: Color = Color::LightBlue;
-pub const BODY_HIGHLIHGT_BG_COLOR: Color = Color::Blue;

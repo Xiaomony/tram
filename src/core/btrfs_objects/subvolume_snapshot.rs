@@ -28,6 +28,12 @@ impl SubvolumeSnapshot {
         self.get_fullpath().to_string_lossy().into()
     }
 
+    #[inline]
+    pub fn get_relate_subvolume_path(&self) -> Option<&str> {
+        // TODO: may need to handle error and report it as a bug if `related_subvolume` is None
+        self.related_subvolume.as_ref().and_then(|x| x.to_str())
+    }
+
     /// new_group_path: the new path of the group snapshot, not containing mount point
     /// e.g. when renaming group name from `default` to `new_group_name`
     /// and for example,  the snapshot should be moved from

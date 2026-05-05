@@ -92,6 +92,16 @@ impl GroupSnapshot {
     pub fn get_time(&self) -> String {
         self.time.clone()
     }
+
+    #[inline]
+    /// returns a string containing all valid snapshots in the form like:
+    /// "@  @home"
+    pub fn get_snapshoted_subvolumes(&self) -> Vec<&str> {
+        self.subvolume_snapshots
+            .iter()
+            .filter_map(|x| x.get_relate_subvolume_path())
+            .collect()
+    }
 }
 
 impl PartialEq<(&str, &str, &SnapshotType)> for GroupSnapshot {

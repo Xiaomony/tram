@@ -22,7 +22,7 @@ impl AsRef<str> for Menu {
             Snapshots => "  Snapshots ",
             Groups => "  Groups ",
             Subvolumes => " 󰨖 Subvolumes ",
-            BrokenSnapshots => " 󰜺 Broken Snapshots ",
+            BrokenSnapshots => "  Broken Snapshots ",
             Settings => "  Settings ",
         }
     }
@@ -34,7 +34,7 @@ impl From<Menu> for &str {
             Snapshots => "  Snapshots ",
             Groups => "  Groups ",
             Subvolumes => " 󰨖 Subvolumes ",
-            BrokenSnapshots => " 󰜺 Broken Snapshots ",
+            BrokenSnapshots => "  Broken Snapshots ",
             Settings => "  Settings ",
         }
     }

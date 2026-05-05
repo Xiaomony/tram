@@ -1,12 +1,12 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, BorderType, Paragraph, Row, Table, TableState},
 };
 use std::{cell::RefCell, rc::Rc};
 
-use crate::tui::app_tui::get_sel_group;
+use crate::tui::app_tui::{AppEvent, get_sel_group, get_sel_group_mut};
 use crate::{
     core::{btrfs_manager::BtrfsManager, btrfs_objects::snapshot_type::SnapshotType},
     globals,
@@ -26,6 +26,9 @@ pub struct SnapshotsUI {
     /// the index of current selected snapshot group
     selected_group: Rc<RefCell<Option<usize>>>,
     focus: SnapshotFocus,
+    manual_snapshot_infos: Vec<(usize, [String; 3])>,
+    scheduled_snapshot_infos: Vec<(usize, [String; 4])>,
+    no_valid_group: bool,
 }
 
 impl SnapshotsUI {
@@ -33,45 +36,72 @@ impl SnapshotsUI {
         btrfs_mgr: Rc<RefCell<BtrfsManager>>,
         selected_group: Rc<RefCell<Option<usize>>>,
     ) -> Self {
-        Self {
+        let mut new_obj = Self {
             btrfs_mgr,
             manual_snapshot_table_state: TableState::default().with_selected(None),
             scheduled_snapshot_table_state: TableState::default().with_selected(None),
             selected_group,
             focus: SnapshotFocus::ManualSnapshot,
+            manual_snapshot_infos: Vec::new(),
+            scheduled_snapshot_infos: Vec::new(),
+            no_valid_group: false,
+        };
+        new_obj.refresh_table_data();
+        new_obj
+    }
+
+    pub fn refresh_table_data(&mut self) {
+        self.manual_snapshot_infos.clear();
+        self.scheduled_snapshot_infos.clear();
+        let Some(group) = get_sel_group(&self.btrfs_mgr, &self.selected_group) else {
+            self.no_valid_group = true;
+            return;
+        };
+        self.no_valid_group = false;
+        let snapshots = group.get_snapshots();
+        for (i, x) in snapshots.iter().enumerate() {
+            let subvols = x.get_snapshoted_subvolumes().join("  ");
+            if x.get_type() == SnapshotType::Manually {
+                self.manual_snapshot_infos
+                    .push((i, [x.get_date(), x.get_time(), subvols]));
+            } else {
+                self.scheduled_snapshot_infos.push((
+                    i,
+                    [
+                        x.get_date(),
+                        x.get_time(),
+                        x.get_type().to_string(),
+                        subvols,
+                    ],
+                ));
+            }
         }
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
-        let mut manual_snapshots_rows = Vec::new();
-        let mut scheduled_snapshots_rows = Vec::new();
-
-        // put these logic in a block to make sure the reference `group` drops early
-        // otherwise, it will conflict with the `&mutable self` function call below
-        {
-            let Some(group) = get_sel_group(&self.btrfs_mgr, &self.selected_group) else {
-                // TODO: no groups
-                todo!();
-            };
-            let snapshots = group.get_snapshots();
-            for x in snapshots {
-                if x.get_type() == SnapshotType::Manually {
-                    manual_snapshots_rows.push(Row::new([x.get_date(), x.get_time()]));
-                } else {
-                    scheduled_snapshots_rows.push(Row::new([
-                        x.get_date(),
-                        x.get_time(),
-                        x.get_type().to_string(),
-                    ]));
-                }
-            }
+        if self.no_valid_group {
+            // TODO: no valid groups
+            todo!()
         }
+        let manual_snapshot_rows: Vec<Row<'_>> = self
+            .manual_snapshot_infos
+            .iter()
+            .map(|x| Row::new(x.1.clone()))
+            .collect();
+        let scheduled_snapshot_rows: Vec<Row<'_>> = self
+            .scheduled_snapshot_infos
+            .iter()
+            .map(|x| Row::new(x.1.clone()))
+            .collect();
 
         // determine the height of each block dynamically
-        let manual_percentage = ((manual_snapshots_rows.len() * 100
-            / (manual_snapshots_rows.len() + scheduled_snapshots_rows.len()))
-            as u16)
-            .clamp(20, 80);
+        let l1 = manual_snapshot_rows.len();
+        let l2 = scheduled_snapshot_rows.len();
+        let manual_percentage = if l1 == 0 && l2 == 0 {
+            50
+        } else {
+            ((l1 * 100 / (l1 + l2)) as u16).clamp(20, 80)
+        };
         let vertical_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -83,24 +113,23 @@ impl SnapshotsUI {
         self.render_manual_block(
             frame,
             vertical_layout[0],
-            manual_snapshots_rows,
+            manual_snapshot_rows,
             focused && self.focus == SnapshotFocus::ManualSnapshot,
         );
         self.render_scheduled_block(
             frame,
             vertical_layout[1],
-            scheduled_snapshots_rows,
+            scheduled_snapshot_rows,
             focused && self.focus == SnapshotFocus::ScheduledSnapshot,
         );
     }
 
     #[inline]
-    /// returns (main_color, highlight_bg_color)
-    fn get_color(focused: bool) -> (Color, Color) {
+    fn get_color(focused: bool) -> Color {
         if focused {
-            (globals::FOCUSED_COLOR, globals::FOCUSED_HIGHLIHGT_BG_COLOR)
+            globals::FOCUSED_COLOR
         } else {
-            (globals::BODY_COLOR, globals::BODY_HIGHLIHGT_BG_COLOR)
+            globals::BODY_COLOR
         }
     }
 
@@ -111,7 +140,13 @@ impl SnapshotsUI {
         rows: Vec<Row>,
         focused: bool,
     ) {
-        let (main_color, highlight_bg_color) = Self::get_color(focused);
+        // check focus state and reset table state if it's not focused
+        if !focused {
+            self.manual_snapshot_table_state.select(None);
+        } else if self.manual_snapshot_table_state.selected().is_none() {
+            self.manual_snapshot_table_state.select_first();
+        }
+        let main_color = Self::get_color(focused);
         let manual_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .style(main_color)
@@ -126,13 +161,17 @@ impl SnapshotsUI {
                 area,
             );
         } else {
-            let header =
-                Row::new(["Date", "Time"]).style(Style::new().bold().italic().underlined());
-            let widths = [Constraint::Percentage(50), Constraint::Percentage(50)];
-            // TODO: add highlight style and color
+            let header = Row::new(["Date", "Time", "Contained Subvolumes"])
+                .style(Style::new().bold().italic().underlined());
+            let widths = [
+                Constraint::Percentage(30),
+                Constraint::Percentage(30),
+                Constraint::Percentage(40),
+            ];
             let table = Table::new(rows, widths)
                 .header(header)
                 .column_spacing(1)
+                .row_highlight_style(Modifier::REVERSED)
                 .style(main_color);
             frame.render_stateful_widget(
                 table.block(manual_block),
@@ -150,7 +189,14 @@ impl SnapshotsUI {
         focused: bool,
     ) {
         // TEST: these code hasn't been verified and tested yet
-        let (main_color, highlight_bg_color) = Self::get_color(focused);
+
+        // check focus state and reset table state if it's not focused
+        if !focused {
+            self.scheduled_snapshot_table_state.select(None);
+        } else if self.scheduled_snapshot_table_state.selected().is_none() {
+            self.scheduled_snapshot_table_state.select_first();
+        }
+        let main_color = Self::get_color(focused);
         let scheduled_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .style(main_color)
@@ -165,19 +211,93 @@ impl SnapshotsUI {
                 area,
             );
         } else {
-            let header =
-                Row::new(["Date", "Time", "Type"]).style(Style::new().bold().italic().underlined());
-            let widths = [Constraint::Percentage(50), Constraint::Percentage(50)];
-            // TODO: add highlight style and color
+            let header = Row::new(["Date", "Time", "Type", "Contained Subvolumes"])
+                .style(Style::new().bold().italic().underlined());
+            let widths = [
+                Constraint::Percentage(20),
+                Constraint::Percentage(20),
+                Constraint::Percentage(20),
+                Constraint::Percentage(40),
+            ];
             let table = Table::new(rows, widths)
                 .header(header)
                 .column_spacing(1)
+                .row_highlight_style(Modifier::REVERSED)
                 .style(main_color);
             frame.render_stateful_widget(
                 table.block(scheduled_block),
                 area,
-                &mut self.manual_snapshot_table_state,
+                &mut self.scheduled_snapshot_table_state,
             );
         };
+    }
+
+    /// returns whether the focus should be returned to menu
+    pub fn handle_events(&mut self, event: AppEvent) -> bool {
+        let table_state = if self.focus == SnapshotFocus::ManualSnapshot {
+            &mut self.manual_snapshot_table_state
+        } else {
+            &mut self.scheduled_snapshot_table_state
+        };
+        use AppEvent::*;
+        match event {
+            Left | WindowLeft => return true,
+            Return => {
+                if self.focus == SnapshotFocus::DetailedInfo {
+                    self.focus = SnapshotFocus::ManualSnapshot;
+                } else {
+                    return true;
+                }
+            }
+            Up => table_state.select_previous(),
+            Down => table_state.select_next(),
+            Top => table_state.select_first(),
+            Bottom => table_state.select_last(),
+            WindowUp if self.focus != SnapshotFocus::DetailedInfo => {
+                self.focus = SnapshotFocus::ManualSnapshot
+            }
+            WindowDown if self.focus != SnapshotFocus::DetailedInfo => {
+                self.focus = SnapshotFocus::ScheduledSnapshot
+            }
+            Create => {
+                if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
+                    // TODO: error handling
+                    group.create_snapshot(SnapshotType::Manually).unwrap();
+                }
+                self.refresh_table_data();
+            }
+            Delete => {
+                if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
+                    // TODO: error handling
+                    if self.focus == SnapshotFocus::ManualSnapshot
+                        && let Some(i) = self.manual_snapshot_table_state.selected()
+                    {
+                        let j = self
+                            .manual_snapshot_infos
+                            .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
+                            .unwrap()
+                            .0;
+                        // TODO: error handling
+                        group.delete_snapshot(j).unwrap();
+                    } else if self.focus == SnapshotFocus::ScheduledSnapshot
+                        && let Some(i) = self.scheduled_snapshot_table_state.selected()
+                    {
+                        let j = self
+                            .scheduled_snapshot_infos
+                            .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
+                            .unwrap()
+                            .0;
+                        // TODO: error handling
+                        group.delete_snapshot(j).unwrap();
+                    }
+                }
+                self.refresh_table_data();
+            }
+            Confirm => todo!(),
+            // Upward => todo!(),
+            // Downward => todo!(),
+            _ => (),
+        }
+        false
     }
 }

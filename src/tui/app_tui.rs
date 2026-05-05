@@ -2,10 +2,10 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, HorizontalAlignment, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, BorderType, List, ListState},
 };
-use std::cell::{Ref, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
 use crate::core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::AppResult};
@@ -18,6 +18,32 @@ enum AppFocus {
     Menu,
     Body,
     KeyPrompt,
+}
+
+#[derive(PartialEq)]
+pub enum AppEvent {
+    // Navigate
+    Up,
+    Down,
+    Left,
+    Right,
+    Upward,
+    Downward,
+    Top,
+    Bottom,
+
+    // move focus to neighboring windows
+    WindowUp,
+    WindowDown,
+    WindowLeft,
+    WindowRight,
+
+    // operations
+    Create,
+    Delete,
+    Rename,
+    Return,
+    Confirm,
 }
 
 pub struct AppTUI {
@@ -42,25 +68,21 @@ impl AppTUI {
     }
 
     fn render_menu(&mut self, frame: &mut Frame, area: Rect) {
-        let main_color;
-        let highlight_color;
-        if self.focus == AppFocus::Menu {
-            main_color = globals::FOCUSED_COLOR;
-            highlight_color = globals::FOCUSED_HIGHLIHGT_BG_COLOR;
+        let main_color = if self.focus == AppFocus::Menu {
+            globals::FOCUSED_COLOR
         } else {
-            main_color = globals::MENU_COLOR;
-            highlight_color = globals::MENU_HIGHLIGHT_BG_COLOR;
-        }
+            globals::MENU_COLOR
+        };
 
         let menu_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title(" 󰍜 Menu ")
             .title_alignment(HorizontalAlignment::Center);
-        let highlight_style = Style::default().fg(Color::Black).bg(highlight_color);
+        // let highlight_style = Style::default().fg(Color::Black).bg(highlight_color);
         let list = List::new(globals::MENU_ITEMS)
             .style(main_color)
-            .highlight_style(highlight_style)
-            .highlight_spacing(ratatui::widgets::HighlightSpacing::WhenSelected)
+            // .highlight_style(highlight_style)
+            .highlight_style(Modifier::REVERSED)
             .block(menu_block);
         frame.render_stateful_widget(list, area, &mut self.menu_state);
     }
@@ -75,7 +97,7 @@ impl AppTUI {
         self.render_menu(frame, horizontal_layout[0]);
 
         // render main block
-        let crr_menu_item = globals::MENU_ITEMS[self.menu_state.selected().unwrap()];
+        let crr_menu_item = self.get_crr_menu_item();
         use Menu::*;
         let focused = self.focus == AppFocus::Body;
         match crr_menu_item {
@@ -95,33 +117,74 @@ impl AppTUI {
         if let Event::Key(key_event) = event::read()? {
             use KeyCode::*;
             let mods = key_event.modifiers;
-            match key_event.code {
-                Char('k') | Up if mods == KeyModifiers::NONE => self.navigate_up(),
-                Char('j') | Down if mods == KeyModifiers::NONE => self.navigate_down(),
+            let app_event = match key_event.code {
+                Char('k') | Up if mods == KeyModifiers::NONE => AppEvent::Up,
+                Char('j') | Down if mods == KeyModifiers::NONE => AppEvent::Down,
+                Char('h') | Left if mods == KeyModifiers::NONE => AppEvent::Left,
+                Char('l') | Right if mods == KeyModifiers::NONE => AppEvent::Right,
                 // navigate to top / bottom
-                Char('g') | Home => self.navigate_top(),
-                Char('G') | End => self.navigate_bottom(),
+                Char('g') | Home => AppEvent::Top,
+                Char('G') | End => AppEvent::Bottom,
+                // navigate upward / downward
+                Char('u') | Char('b') if mods == KeyModifiers::CONTROL => AppEvent::Upward,
+                Char('d') | Char('f') if mods == KeyModifiers::CONTROL => AppEvent::Downward,
+                // move focus to neighboring windows
+                Char('k') | Up if mods == KeyModifiers::CONTROL => AppEvent::WindowUp,
+                Char('j') | Down if mods == KeyModifiers::CONTROL => AppEvent::WindowDown,
+                Char('h') | Left if mods == KeyModifiers::CONTROL => AppEvent::WindowLeft,
+                Char('l') | Right if mods == KeyModifiers::CONTROL => AppEvent::WindowRight,
 
-                Char('q') | Esc => return Ok(true),
-                _ => (),
+                // operations
+                Char('a') => AppEvent::Create,
+                Char('d') | Char('x') => AppEvent::Delete,
+                Char('r') => AppEvent::Rename,
+                Char(' ') | Enter => AppEvent::Confirm,
+                Char('q') => return Ok(true),
+                Esc => AppEvent::Return,
+                _ => return Ok(false),
+            };
+
+            match self.focus {
+                AppFocus::Menu => {
+                    if app_event == AppEvent::Return {
+                        return Ok(true);
+                    } else {
+                        self.handle_menu_events(app_event)
+                    }
+                }
+                AppFocus::Body => {
+                    use crate::tui::menu::Menu::*;
+                    if match self.get_crr_menu_item() {
+                        Snapshots => self.snapshot_ui.handle_events(app_event),
+                        Groups => false,
+                        Subvolumes => false,
+                        BrokenSnapshots => false,
+                        Settings => false,
+                    } {
+                        self.focus = AppFocus::Menu;
+                    }
+                }
+                AppFocus::KeyPrompt => (),
             }
         }
         Ok(false)
     }
 
-    fn navigate_up(&mut self) {
-        self.menu_state.select_previous();
+    pub fn handle_menu_events(&mut self, event: AppEvent) {
+        use AppEvent::*;
+        match event {
+            Up => self.menu_state.select_previous(),
+            Down => self.menu_state.select_next(),
+            Upward | Top => self.menu_state.select_first(),
+            Downward | Bottom => self.menu_state.select_last(),
+            Right | Confirm | WindowRight => self.focus = AppFocus::Body,
+            _ => (),
+        }
     }
-
-    fn navigate_down(&mut self) {
-        self.menu_state.select_next();
-    }
-
-    fn navigate_bottom(&mut self) {
-        self.menu_state.select_last();
-    }
-    fn navigate_top(&mut self) {
-        self.menu_state.select_first();
+    #[inline]
+    pub fn get_crr_menu_item(&self) -> Menu {
+        // TODO: Error handling
+        globals::MENU_ITEMS[self.menu_state.selected().unwrap()]
     }
 }
 
@@ -140,6 +203,27 @@ pub fn get_sel_group<'a>(
     } else if !mgr.get_groups().is_empty() {
         *selected_group.borrow_mut() = Some(0);
         Some(Ref::map(mgr, |m| m.get_groups().first().unwrap()))
+    } else {
+        None
+    }
+}
+
+pub fn get_sel_group_mut<'a>(
+    btrfs_mgr: &'a Rc<RefCell<BtrfsManager>>,
+    selected_group: &'a Rc<RefCell<Option<usize>>>,
+) -> Option<RefMut<'a, Group>> {
+    let mgr = btrfs_mgr.borrow_mut();
+    if let Some(index) = *selected_group.borrow()
+        && index < mgr.get_groups().len()
+    {
+        Some(RefMut::map(mgr, |m| {
+            m.get_groups_mut().get_mut(index).unwrap()
+        }))
+    } else if !mgr.get_groups().is_empty() {
+        *selected_group.borrow_mut() = Some(0);
+        Some(RefMut::map(mgr, |m| {
+            m.get_groups_mut().first_mut().unwrap()
+        }))
     } else {
         None
     }
