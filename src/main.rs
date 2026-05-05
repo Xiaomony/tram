@@ -2,13 +2,15 @@ mod core;
 mod globals;
 mod tui;
 
-use color_eyre::Result;
 use ratatui::{DefaultTerminal, Frame};
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{core::btrfs_manager::BtrfsManager, tui::app_tui::AppTUI};
+use crate::{
+    core::{btrfs_manager::BtrfsManager, error::CResult},
+    tui::app_tui::AppTUI,
+};
 
-fn main() -> color_eyre::Result<()> {
+fn main() -> CResult<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
     let result = run(terminal);
@@ -16,7 +18,7 @@ fn main() -> color_eyre::Result<()> {
     result
 }
 
-fn run(mut terminal: DefaultTerminal) -> Result<()> {
+fn run(mut terminal: DefaultTerminal) -> CResult<()> {
     let mgr = Rc::new(RefCell::new(BtrfsManager::new_default_partion()?));
     let mut tui = AppTUI::new(mgr.clone());
 

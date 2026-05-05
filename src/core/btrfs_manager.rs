@@ -1,3 +1,5 @@
+use color_eyre::Section;
+use color_eyre::eyre::Context;
 use file_lock::{FileLock, FileOptions};
 use regex::Regex;
 use std::fs::create_dir_all;
@@ -7,7 +9,7 @@ use crate::core::app_config::AppConfig;
 use crate::core::btrfs_objects::group::Group;
 use crate::core::btrfs_objects::snapshot_type::SnapshotType;
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
-use crate::core::error::{AppError, AppResult, throw_invalid_index};
+use crate::core::error::{AppError, CResult, throw_invalid_index};
 use crate::core::utils::*;
 use crate::globals;
 
@@ -26,7 +28,7 @@ pub struct BtrfsManager {
 
 impl BtrfsManager {
     /// create an object based on a specified block device
-    pub fn new(device: String) -> AppResult<Self> {
+    pub fn new(device: String) -> CResult<Self> {
         check_root_permission()?;
         let file_lock = Self::create_file_lock()?;
         check_is_btrfs_filesystem(&device)?;
@@ -56,22 +58,22 @@ impl BtrfsManager {
     }
 
     /// create an object based on the partion at which the current system root is located
-    pub fn new_default_partion() -> AppResult<Self> {
+    pub fn new_default_partion() -> CResult<Self> {
         Self::new(get_crr_os_device()?)
     }
 
-    fn create_file_lock() -> AppResult<FileLock> {
+    fn create_file_lock() -> CResult<FileLock> {
         let options = FileOptions::new().write(true).create(true);
         match FileLock::lock(globals::FILE_LOCK, false, options) {
             Ok(file_lock) => Ok(file_lock),
-            Err(e) => Err(AppError::MultipleInstance(e)),
+            Err(e) => Err(AppError::MultipleInstance(e).into()),
         }
     }
 
     /// returns if the subvolume layout satisfies `@` and `@home`
-    fn get_subvolumes_and_snapshots(&mut self) -> AppResult<()> {
-        let btrfs_output =
-            exec_command("btrfs", ["subvolume", "list", "-o", globals::MOUNT_POINT])?;
+    fn get_subvolumes_and_snapshots(&mut self) -> CResult<()> {
+        let btrfs_output = exec_command("btrfs", ["subvolume", "list", "-o", globals::MOUNT_POINT])
+            .wrap_err("Error occurs when getting the subvolume list")?;
         let r = Regex::new(r"(?m)^ID.*top level 5 path (.+)$")?;
 
         let mut layout_at = false; // is there a `@` subvolume
@@ -95,7 +97,11 @@ impl BtrfsManager {
             .iter_mut()
             .for_each(|x| x.verify_subvolumes(&(self.subvolumes), &mut removed_config_subvols));
         if !removed_config_subvols.is_empty() {
-            return Err(AppError::ConfigErrSubvolumeNotExist(removed_config_subvols));
+            return Err(AppError::InvalidConfig)
+                .wrap_err_with(|| {
+                    format!("Non-existent subvolumes occur in config:\n{removed_config_subvols:?}")
+                })
+                .suggestion("The invalid subvolume has been removed, please restart.");
         }
 
         // add default group for new user whose subvolume layout satisfies `@` and `@home`
@@ -141,14 +147,14 @@ impl BtrfsManager {
         }
     }
 
-    pub fn create_snapshot(&mut self, index: usize, snapshot_type: SnapshotType) -> AppResult<()> {
+    pub fn create_snapshot(&mut self, index: usize, snapshot_type: SnapshotType) -> CResult<()> {
         let Some(group) = self.app_config.groups.get_mut(index) else {
             return throw_invalid_index(index, "creating snapshot");
         };
         group.create_snapshot(snapshot_type)
     }
 
-    pub fn delete_snapshot(&mut self, group_index: usize, snapshot_index: usize) -> AppResult<()> {
+    pub fn delete_snapshot(&mut self, group_index: usize, snapshot_index: usize) -> CResult<()> {
         let Some(group) = self.app_config.groups.get_mut(group_index) else {
             return throw_invalid_index(group_index, "deleting snapshot(invalid group index)");
         };
@@ -156,15 +162,11 @@ impl BtrfsManager {
     }
 
     #[inline]
-    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> AppResult<()> {
+    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> CResult<()> {
         self.app_config.rename_group(index, new_name)
     }
 
-    pub fn add_subvol_to_group(
-        &mut self,
-        group_index: usize,
-        subvol_index: usize,
-    ) -> AppResult<()> {
+    pub fn add_subvol_to_group(&mut self, group_index: usize, subvol_index: usize) -> CResult<()> {
         let Some(subvol) = self.subvolumes.get(subvol_index) else {
             return throw_invalid_index(
                 subvol_index,

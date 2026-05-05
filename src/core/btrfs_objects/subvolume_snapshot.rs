@@ -1,4 +1,4 @@
-use crate::core::error::{AppError, AppResult};
+use crate::core::error::{AppError, CResult};
 use crate::core::utils::{exec_command, mount_point_join};
 use crate::globals;
 use std::path::{Path, PathBuf};
@@ -29,8 +29,9 @@ impl SubvolumeSnapshot {
     }
 
     #[inline]
+    /// returns None if there's no subvolume related to this snapshot
+    /// or the subvolume path is not a valid UTF-8 string
     pub fn get_relate_subvolume_path(&self) -> Option<&str> {
-        // TODO: may need to handle error and report it as a bug if `related_subvolume` is None
         self.related_subvolume.as_ref().and_then(|x| x.to_str())
     }
 
@@ -40,7 +41,7 @@ impl SubvolumeSnapshot {
     /// `/run/tram_btrfs/tram_btrfs/snapshot_groups/default/manually/2026-04-16_21:26:00/@`
     /// to `/run/tram_btrfs/tram_btrfs/snapshot_groups/new_group_name/manually/2026-04-16_21:26:00/@`
     /// and this parameter should be `tram_btrfs/snapshot_groups/new_group_name/manually/2026-04-16_21:26:00`
-    pub fn move_snapshot<T: AsRef<Path>>(&mut self, new_group_snapshot_path: T) -> AppResult<()> {
+    pub fn move_snapshot<T: AsRef<Path>>(&mut self, new_group_snapshot_path: T) -> CResult<()> {
         let mount_point = PathBuf::from(globals::MOUNT_POINT);
         let oldpath = mount_point.join(&self.path);
         // erase its readonly property
@@ -62,7 +63,8 @@ impl SubvolumeSnapshot {
                 "No related subvolume when moving snapshot:\n\tfrom: {:?}\n\tto: {:?}",
                 self.related_subvolume,
                 new_group_snapshot_path.as_ref()
-            )));
+            ))
+            .into());
         };
         let newpath = mount_point.join(new_group_snapshot_path).join(subvol_path);
         std::fs::create_dir_all(&newpath)?;

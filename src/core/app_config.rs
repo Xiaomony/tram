@@ -1,5 +1,5 @@
-use crate::core::error::throw_invalid_index;
-use crate::core::{btrfs_objects::group::Group, error::AppResult};
+use crate::core::btrfs_objects::group::Group;
+use crate::core::error::{CResult, throw_invalid_index};
 use crate::globals;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
@@ -49,7 +49,7 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn load_config() -> AppResult<AppConfig> {
+    pub fn load_config() -> CResult<AppConfig> {
         create_dir_all(&*globals::CONFIG_DIR)?;
         let config_file_path = &*globals::MAIN_CONFIG_FILE_PATH;
         if fs::exists(config_file_path)? {
@@ -72,7 +72,7 @@ impl AppConfig {
     }
 
     #[inline]
-    pub fn write_config(&self) -> AppResult<()> {
+    pub fn write_config(&self) -> CResult<()> {
         std::fs::write(&*globals::MAIN_CONFIG_FILE_PATH, toml::to_string(self)?)?;
         Ok(())
     }
@@ -82,13 +82,13 @@ impl AppConfig {
         &mut self,
         group_name: T,
         subvolumes: Vec<PathBuf>,
-    ) -> AppResult<()> {
+    ) -> CResult<()> {
         self.groups.push(Group::new(group_name.into(), subvolumes));
         self.write_config()
     }
 
     #[inline]
-    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> AppResult<()> {
+    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> CResult<()> {
         let Some(group) = self.groups.get_mut(index) else {
             return throw_invalid_index(index, "renaming group");
         };
@@ -102,8 +102,14 @@ impl AppConfig {
     }
 
     #[inline]
-    pub fn change_schedule(&mut self, new_schedule: AutoSnapshotSchedule) -> AppResult<()> {
+    pub fn change_schedule(&mut self, new_schedule: AutoSnapshotSchedule) -> CResult<()> {
         self.schedule = new_schedule;
         self.write_config()
+    }
+}
+
+impl Drop for AppConfig {
+    fn drop(&mut self) {
+        let _ = self.write_config();
     }
 }

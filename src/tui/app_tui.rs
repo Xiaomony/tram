@@ -2,13 +2,13 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, HorizontalAlignment, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::Modifier,
     widgets::{Block, BorderType, List, ListState},
 };
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::AppResult};
+use crate::core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::CResult};
 use crate::globals;
 use crate::tui::menu::Menu;
 use crate::tui::snapshots_ui::SnapshotsUI;
@@ -113,7 +113,7 @@ impl AppTUI {
     }
 
     // returns whether the program should exit
-    pub fn read_events(&mut self) -> AppResult<bool> {
+    pub fn read_events(&mut self) -> CResult<bool> {
         if let Event::Key(key_event) = event::read()? {
             use KeyCode::*;
             let mods = key_event.modifiers;
@@ -155,7 +155,7 @@ impl AppTUI {
                 AppFocus::Body => {
                     use crate::tui::menu::Menu::*;
                     if match self.get_crr_menu_item() {
-                        Snapshots => self.snapshot_ui.handle_events(app_event),
+                        Snapshots => self.snapshot_ui.handle_events(app_event)?,
                         Groups => false,
                         Subvolumes => false,
                         BrokenSnapshots => false,
@@ -183,7 +183,6 @@ impl AppTUI {
     }
     #[inline]
     pub fn get_crr_menu_item(&self) -> Menu {
-        // TODO: Error handling
         globals::MENU_ITEMS[self.menu_state.selected().unwrap()]
     }
 }

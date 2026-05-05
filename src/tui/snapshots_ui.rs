@@ -6,7 +6,10 @@ use ratatui::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-use crate::tui::app_tui::{AppEvent, get_sel_group, get_sel_group_mut};
+use crate::{
+    core::error::CResult,
+    tui::app_tui::{AppEvent, get_sel_group, get_sel_group_mut},
+};
 use crate::{
     core::{btrfs_manager::BtrfsManager, btrfs_objects::snapshot_type::SnapshotType},
     globals,
@@ -233,7 +236,7 @@ impl SnapshotsUI {
     }
 
     /// returns whether the focus should be returned to menu
-    pub fn handle_events(&mut self, event: AppEvent) -> bool {
+    pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
         let table_state = if self.focus == SnapshotFocus::ManualSnapshot {
             &mut self.manual_snapshot_table_state
         } else {
@@ -241,12 +244,12 @@ impl SnapshotsUI {
         };
         use AppEvent::*;
         match event {
-            Left | WindowLeft => return true,
+            Left | WindowLeft => return Ok(true),
             Return => {
                 if self.focus == SnapshotFocus::DetailedInfo {
                     self.focus = SnapshotFocus::ManualSnapshot;
                 } else {
-                    return true;
+                    return Ok(true);
                 }
             }
             Up => table_state.select_previous(),
@@ -261,14 +264,12 @@ impl SnapshotsUI {
             }
             Create => {
                 if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
-                    // TODO: error handling
-                    group.create_snapshot(SnapshotType::Manually).unwrap();
+                    group.create_snapshot(SnapshotType::Manually)?;
                 }
                 self.refresh_table_data();
             }
             Delete => {
                 if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
-                    // TODO: error handling
                     if self.focus == SnapshotFocus::ManualSnapshot
                         && let Some(i) = self.manual_snapshot_table_state.selected()
                     {
@@ -277,8 +278,7 @@ impl SnapshotsUI {
                             .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
                             .unwrap()
                             .0;
-                        // TODO: error handling
-                        group.delete_snapshot(j).unwrap();
+                        group.delete_snapshot(j)?;
                     } else if self.focus == SnapshotFocus::ScheduledSnapshot
                         && let Some(i) = self.scheduled_snapshot_table_state.selected()
                     {
@@ -287,8 +287,7 @@ impl SnapshotsUI {
                             .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
                             .unwrap()
                             .0;
-                        // TODO: error handling
-                        group.delete_snapshot(j).unwrap();
+                        group.delete_snapshot(j)?;
                     }
                 }
                 self.refresh_table_data();
@@ -298,6 +297,6 @@ impl SnapshotsUI {
             // Downward => todo!(),
             _ => (),
         }
-        false
+        Ok(false)
     }
 }
