@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(PartialEq)]
-enum SnapshotFocus {
+enum SnapshotUIFocus {
     ManualSnapshot,
     ScheduledSnapshot,
     DetailedInfo,
@@ -28,7 +28,7 @@ pub struct SnapshotsUI {
     scheduled_snapshot_table_state: TableState,
     /// the index of current selected snapshot group
     selected_group: Rc<RefCell<Option<usize>>>,
-    focus: SnapshotFocus,
+    focus: SnapshotUIFocus,
     manual_snapshot_infos: Vec<(usize, [String; 3])>,
     scheduled_snapshot_infos: Vec<(usize, [String; 4])>,
     no_valid_group: bool,
@@ -44,7 +44,7 @@ impl SnapshotsUI {
             manual_snapshot_table_state: TableState::default().with_selected(None),
             scheduled_snapshot_table_state: TableState::default().with_selected(None),
             selected_group,
-            focus: SnapshotFocus::ManualSnapshot,
+            focus: SnapshotUIFocus::ManualSnapshot,
             manual_snapshot_infos: Vec::new(),
             scheduled_snapshot_infos: Vec::new(),
             no_valid_group: false,
@@ -117,13 +117,13 @@ impl SnapshotsUI {
             frame,
             vertical_layout[0],
             manual_snapshot_rows,
-            focused && self.focus == SnapshotFocus::ManualSnapshot,
+            focused && self.focus == SnapshotUIFocus::ManualSnapshot,
         );
         self.render_scheduled_block(
             frame,
             vertical_layout[1],
             scheduled_snapshot_rows,
-            focused && self.focus == SnapshotFocus::ScheduledSnapshot,
+            focused && self.focus == SnapshotUIFocus::ScheduledSnapshot,
         );
     }
 
@@ -143,8 +143,7 @@ impl SnapshotsUI {
         rows: Vec<Row>,
         focused: bool,
     ) {
-        // check focus state and reset table state if it's not focused
-        if !focused {
+        if self.manual_snapshot_infos.is_empty() {
             self.manual_snapshot_table_state.select(None);
         } else if self.manual_snapshot_table_state.selected().is_none() {
             self.manual_snapshot_table_state.select_first();
@@ -171,11 +170,13 @@ impl SnapshotsUI {
                 Constraint::Percentage(30),
                 Constraint::Percentage(40),
             ];
-            let table = Table::new(rows, widths)
+            let mut table = Table::new(rows, widths)
                 .header(header)
                 .column_spacing(1)
-                .row_highlight_style(Modifier::REVERSED)
                 .style(main_color);
+            if focused {
+                table = table.row_highlight_style(Modifier::REVERSED);
+            }
             frame.render_stateful_widget(
                 table.block(manual_block),
                 area,
@@ -191,10 +192,7 @@ impl SnapshotsUI {
         rows: Vec<Row>,
         focused: bool,
     ) {
-        // TEST: these code hasn't been verified and tested yet
-
-        // check focus state and reset table state if it's not focused
-        if !focused {
+        if self.scheduled_snapshot_infos.is_empty() {
             self.scheduled_snapshot_table_state.select(None);
         } else if self.scheduled_snapshot_table_state.selected().is_none() {
             self.scheduled_snapshot_table_state.select_first();
@@ -222,11 +220,13 @@ impl SnapshotsUI {
                 Constraint::Percentage(20),
                 Constraint::Percentage(40),
             ];
-            let table = Table::new(rows, widths)
+            let mut table = Table::new(rows, widths)
                 .header(header)
                 .column_spacing(1)
-                .row_highlight_style(Modifier::REVERSED)
                 .style(main_color);
+            if focused {
+                table = table.row_highlight_style(Modifier::REVERSED);
+            }
             frame.render_stateful_widget(
                 table.block(scheduled_block),
                 area,
@@ -237,30 +237,64 @@ impl SnapshotsUI {
 
     /// returns whether the focus should be returned to menu
     pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
-        let table_state = if self.focus == SnapshotFocus::ManualSnapshot {
-            &mut self.manual_snapshot_table_state
+        let table_state;
+        let info_len;
+        if self.focus == SnapshotUIFocus::ManualSnapshot {
+            table_state = &mut self.manual_snapshot_table_state;
+            info_len = self.manual_snapshot_infos.len();
         } else {
-            &mut self.scheduled_snapshot_table_state
-        };
+            // WARN: focus may be in DetailedInfo
+            table_state = &mut self.scheduled_snapshot_table_state;
+            info_len = self.scheduled_snapshot_infos.len();
+        }
         use AppEvent::*;
         match event {
             Left | WindowLeft => return Ok(true),
             Return => {
-                if self.focus == SnapshotFocus::DetailedInfo {
-                    self.focus = SnapshotFocus::ManualSnapshot;
+                if self.focus == SnapshotUIFocus::DetailedInfo {
+                    self.focus = SnapshotUIFocus::ManualSnapshot;
                 } else {
                     return Ok(true);
                 }
             }
+
+            // move focus up/down if the selected table item has been the first/last one
+            // these codes are really weird and ugly but there're no better ways to do so...
+            Up | Upward
+                if self.focus == SnapshotUIFocus::ScheduledSnapshot
+                    && let Some(0) | None = table_state.selected() =>
+            {
+                self.focus = SnapshotUIFocus::ManualSnapshot
+            }
+            Down | Downward
+                if self.focus == SnapshotUIFocus::ManualSnapshot
+                    && matches!(table_state.selected(), Some(sel) if sel + 1 >= info_len)
+                    || table_state.selected().is_none() =>
+            {
+                self.focus = SnapshotUIFocus::ScheduledSnapshot
+            }
+
             Up => table_state.select_previous(),
             Down => table_state.select_next(),
             Top => table_state.select_first(),
             Bottom => table_state.select_last(),
-            WindowUp if self.focus != SnapshotFocus::DetailedInfo => {
-                self.focus = SnapshotFocus::ManualSnapshot
+            Upward => {
+                if let Some(sel) = table_state.selected() {
+                    table_state.select(Some(sel.saturating_sub(4)));
+                }
             }
-            WindowDown if self.focus != SnapshotFocus::DetailedInfo => {
-                self.focus = SnapshotFocus::ScheduledSnapshot
+            Downward => {
+                if let Some(sel) = table_state.selected()
+                    && info_len > 0
+                {
+                    table_state.select(Some((sel + 4).min(info_len - 1)));
+                }
+            }
+            WindowUp if self.focus != SnapshotUIFocus::DetailedInfo => {
+                self.focus = SnapshotUIFocus::ManualSnapshot
+            }
+            WindowDown if self.focus != SnapshotUIFocus::DetailedInfo => {
+                self.focus = SnapshotUIFocus::ScheduledSnapshot
             }
             Create => {
                 if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
@@ -270,7 +304,7 @@ impl SnapshotsUI {
             }
             Delete => {
                 if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
-                    if self.focus == SnapshotFocus::ManualSnapshot
+                    if self.focus == SnapshotUIFocus::ManualSnapshot
                         && let Some(i) = self.manual_snapshot_table_state.selected()
                     {
                         let j = self
@@ -279,12 +313,12 @@ impl SnapshotsUI {
                             .unwrap()
                             .0;
                         group.delete_snapshot(j)?;
-                    } else if self.focus == SnapshotFocus::ScheduledSnapshot
+                    } else if self.focus == SnapshotUIFocus::ScheduledSnapshot
                         && let Some(i) = self.scheduled_snapshot_table_state.selected()
                     {
                         let j = self
                             .scheduled_snapshot_infos
-                            .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
+                            .get(i.clamp(0, self.scheduled_snapshot_infos.len() - 1))
                             .unwrap()
                             .0;
                         group.delete_snapshot(j)?;
@@ -293,10 +327,9 @@ impl SnapshotsUI {
                 self.refresh_table_data();
             }
             Confirm => todo!(),
-            // Upward => todo!(),
-            // Downward => todo!(),
             _ => (),
         }
+
         Ok(false)
     }
 }

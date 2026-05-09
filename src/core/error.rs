@@ -19,7 +19,6 @@ pub enum AppError {
     #[error("[Multiple Instance] Another Tram TUI instance is running\n\tRaw error: {0}")]
     MultipleInstance(io::Error),
 
-    // TODO: merge this to config error
     #[error("[Config Error] There's something wrong in your config file")]
     InvalidConfig,
 
