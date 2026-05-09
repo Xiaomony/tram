@@ -1,5 +1,5 @@
 use crate::core::btrfs_objects::group::Group;
-use crate::core::error::{CResult, throw_invalid_index};
+use crate::core::error::{AppError, CResult, throw_invalid_index};
 use crate::globals;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, create_dir_all};
@@ -88,7 +88,12 @@ impl AppConfig {
     }
 
     #[inline]
-    pub fn rename_group<T: Into<String>>(&mut self, index: usize, new_name: T) -> CResult<()> {
+    pub fn rename_group(&mut self, index: usize, new_name: impl Into<String>) -> CResult<()> {
+        let new_name = new_name.into();
+        // check for duplicated name
+        if self.groups.iter().any(|x| x.get_name() == new_name) {
+            return Err(AppError::RenamingDuplicatedName(new_name).into());
+        }
         let Some(group) = self.groups.get_mut(index) else {
             return throw_invalid_index(index, "renaming group");
         };

@@ -3,15 +3,18 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
     style::Modifier,
-    widgets::{Block, BorderType, Borders, Clear, List, ListState, Paragraph, Widget},
+    widgets::{Block, BorderType, Borders, Clear, List, ListState, Paragraph},
 };
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
 
-use crate::core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::CResult};
 use crate::globals;
 use crate::tui::menu::Menu;
 use crate::tui::snapshots_ui::SnapshotsUI;
+use crate::{
+    core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::CResult},
+    tui::subvolumes_ui::SubvolumesUI,
+};
 
 #[derive(PartialEq)]
 enum AppFocus {
@@ -49,7 +52,8 @@ pub enum AppEvent {
 }
 
 pub struct AppTUI {
-    snapshot_ui: SnapshotsUI,
+    snapshots_ui: SnapshotsUI,
+    subvolumes_ui: SubvolumesUI,
     menu_state: ListState,
     _btrfs_mgr: Rc<RefCell<BtrfsManager>>,
     /// the index of current selected snapshot group
@@ -61,7 +65,8 @@ impl AppTUI {
     pub fn new(btrfs_mgr: Rc<RefCell<BtrfsManager>>) -> Self {
         let selected_group = Rc::new(RefCell::new(None));
         Self {
-            snapshot_ui: SnapshotsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+            snapshots_ui: SnapshotsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+            subvolumes_ui: SubvolumesUI::new(btrfs_mgr.clone()),
             menu_state: ListState::default().with_selected(Some(0)),
             _btrfs_mgr: btrfs_mgr,
             _selected_group: selected_group,
@@ -104,13 +109,14 @@ impl AppTUI {
         let focused = self.focus == AppFocus::Body;
         match crr_menu_item {
             Snapshots => self
-                .snapshot_ui
+                .snapshots_ui
                 .render(frame, horizontal_layout[1], focused),
             Groups => (),
-            _ => (),
-            // Subvolumes => self.render_subvolumes(frame, horizontal_layout[1]),
-            // BrokenSnapshots => self.render_broken_snapshots(frame, horizontal_layout[1]),
-            // Settings => self.render_settings(frame, horizontal_layout[1]),
+            Subvolumes => self
+                .subvolumes_ui
+                .render(frame, horizontal_layout[1], focused),
+            BrokenSnapshots => (),
+            Settings => (),
         }
     }
 
@@ -159,7 +165,7 @@ impl AppTUI {
                 AppFocus::Body => {
                     use crate::tui::menu::Menu::*;
                     if match self.get_crr_menu_item() {
-                        Snapshots => self.snapshot_ui.handle_events(app_event)?,
+                        Snapshots => self.snapshots_ui.handle_events(app_event)?,
                         Groups => false,
                         Subvolumes => false,
                         BrokenSnapshots => false,

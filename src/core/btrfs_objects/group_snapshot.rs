@@ -59,23 +59,6 @@ impl GroupSnapshot {
         Ok(())
     }
 
-    /// new_group_path: new path to group, not containing mount point
-    /// e.g. when renaming group name from `default` to `new_group_name`
-    /// and there're snapshots under `/run/tram_btrfs/tram_btrfs/snapshot_groups/default/manually/2026-04-16_21:26:00/`
-    /// and this parameter should be `tram_btrfs/snapshot_groups/new_group_name/`
-    pub fn rename_group_snapshot<T: AsRef<Path>>(&mut self, new_group_path: T) -> CResult<()> {
-        // path to /run/tram_btrfs/snapshot_group
-        let new_group_snapshot_path = new_group_path
-            .as_ref()
-            .join(self.snapshot_type.as_ref())
-            .join(format!("{}_{}", self.date, self.time));
-
-        for x in self.subvolume_snapshots.iter_mut() {
-            x.move_snapshot(&new_group_snapshot_path)?;
-        }
-        Ok(())
-    }
-
     #[inline]
     pub fn get_type(&self) -> SnapshotType {
         self.snapshot_type

@@ -4,7 +4,7 @@ use crate::core::error::{AppError, CResult, throw_invalid_index};
 use crate::core::utils::{exec_command, get_current_date_time, mount_point_join};
 use crate::globals;
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, remove_dir_all};
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -23,6 +23,11 @@ impl Group {
             subvolumes,
             snapshots: Vec::new(),
         }
+    }
+
+    #[inline]
+    pub fn get_name(&self) -> &str {
+        self.group_name.as_str()
     }
 
     /**
@@ -119,13 +124,11 @@ impl Group {
             return Ok(());
         }
         let new_group_path = globals::SNAPSHOT_GROUP_DIR_PATH.join(&new_name);
-        create_dir_all(&new_group_path)?;
-        for x in self.snapshots.iter_mut() {
-            x.rename_group_snapshot(&new_group_path)?;
-        }
-        // remove old directory
         let old_name = std::mem::replace(&mut self.group_name, new_name);
-        remove_dir_all(globals::SNAPSHOT_GROUP_DIR_PATH.join(old_name))?;
+        let old_group_path = globals::SNAPSHOT_GROUP_DIR_PATH.join(old_name);
+
+        std::fs::rename(old_group_path, new_group_path)?;
+
         Ok(())
     }
 
