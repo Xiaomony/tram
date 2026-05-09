@@ -8,7 +8,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     core::error::CResult,
-    tui::app_tui::{AppEvent, get_sel_group, get_sel_group_mut},
+    tui::app_tui::{self, AppEvent, get_sel_group, get_sel_group_mut},
 };
 use crate::{
     core::{btrfs_manager::BtrfsManager, btrfs_objects::snapshot_type::SnapshotType},
@@ -19,7 +19,7 @@ use crate::{
 enum SnapshotUIFocus {
     ManualSnapshot,
     ScheduledSnapshot,
-    DetailedInfo,
+    ConfirmingDelete { msg: String, index: usize },
 }
 
 pub struct SnapshotsUI {
@@ -125,6 +125,14 @@ impl SnapshotsUI {
             scheduled_snapshot_rows,
             focused && self.focus == SnapshotUIFocus::ScheduledSnapshot,
         );
+        if let SnapshotUIFocus::ConfirmingDelete { ref msg, .. } = self.focus {
+            app_tui::show_confirm_popup(
+                frame,
+                frame.area(),
+                "Delete the following snapshot?",
+                Paragraph::new(msg.as_str()),
+            );
+        }
     }
 
     #[inline]
@@ -237,26 +245,37 @@ impl SnapshotsUI {
 
     /// returns whether the focus should be returned to menu
     pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
+        // handle events if it's confirming currently
+        if let SnapshotUIFocus::ConfirmingDelete { index, .. } = self.focus {
+            use AppEvent::*;
+            match event {
+                Yes => {
+                    if let Some(mut group) =
+                        get_sel_group_mut(&self.btrfs_mgr, &self.selected_group)
+                    {
+                        group.delete_snapshot(index)?;
+                    }
+                    self.focus = SnapshotUIFocus::ManualSnapshot;
+                    self.refresh_table_data();
+                }
+                Escape | No => self.focus = SnapshotUIFocus::ManualSnapshot,
+                _ => (),
+            }
+            return Ok(false);
+        }
+
         let table_state;
         let info_len;
         if self.focus == SnapshotUIFocus::ManualSnapshot {
             table_state = &mut self.manual_snapshot_table_state;
             info_len = self.manual_snapshot_infos.len();
         } else {
-            // WARN: focus may be in DetailedInfo
             table_state = &mut self.scheduled_snapshot_table_state;
             info_len = self.scheduled_snapshot_infos.len();
         }
         use AppEvent::*;
         match event {
             Left | WindowLeft => return Ok(true),
-            Return => {
-                if self.focus == SnapshotUIFocus::DetailedInfo {
-                    self.focus = SnapshotUIFocus::ManualSnapshot;
-                } else {
-                    return Ok(true);
-                }
-            }
 
             // move focus up/down if the selected table item has been the first/last one
             // these codes are really weird and ugly but there're no better ways to do so...
@@ -290,12 +309,8 @@ impl SnapshotsUI {
                     table_state.select(Some((sel + 4).min(info_len - 1)));
                 }
             }
-            WindowUp if self.focus != SnapshotUIFocus::DetailedInfo => {
-                self.focus = SnapshotUIFocus::ManualSnapshot
-            }
-            WindowDown if self.focus != SnapshotUIFocus::DetailedInfo => {
-                self.focus = SnapshotUIFocus::ScheduledSnapshot
-            }
+            WindowUp => self.focus = SnapshotUIFocus::ManualSnapshot,
+            WindowDown => self.focus = SnapshotUIFocus::ScheduledSnapshot,
             Create => {
                 if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
                     group.create_snapshot(SnapshotType::Manually)?;
@@ -303,30 +318,40 @@ impl SnapshotsUI {
                 self.refresh_table_data();
             }
             Delete => {
-                if let Some(mut group) = get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) {
-                    if self.focus == SnapshotUIFocus::ManualSnapshot
-                        && let Some(i) = self.manual_snapshot_table_state.selected()
-                    {
-                        let j = self
-                            .manual_snapshot_infos
-                            .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
-                            .unwrap()
-                            .0;
-                        group.delete_snapshot(j)?;
-                    } else if self.focus == SnapshotUIFocus::ScheduledSnapshot
-                        && let Some(i) = self.scheduled_snapshot_table_state.selected()
-                    {
-                        let j = self
-                            .scheduled_snapshot_infos
-                            .get(i.clamp(0, self.scheduled_snapshot_infos.len() - 1))
-                            .unwrap()
-                            .0;
-                        group.delete_snapshot(j)?;
-                    }
+                if self.focus == SnapshotUIFocus::ManualSnapshot
+                    && let Some(i) = self.manual_snapshot_table_state.selected()
+                {
+                    let info = self
+                        .manual_snapshot_infos
+                        .get(i.clamp(0, self.manual_snapshot_infos.len() - 1))
+                        .unwrap();
+                    self.focus = SnapshotUIFocus::ConfirmingDelete {
+                        msg: format!(
+                            "Type: {}\nData: {}\nTime: {}\nContained Subvolumes:\n{}",
+                            SnapshotType::Manually,
+                            info.1[0],
+                            info.1[1],
+                            info.1[2],
+                        ),
+                        index: info.0,
+                    };
+                } else if self.focus == SnapshotUIFocus::ScheduledSnapshot
+                    && let Some(i) = self.scheduled_snapshot_table_state.selected()
+                {
+                    let info = self
+                        .scheduled_snapshot_infos
+                        .get(i.clamp(0, self.scheduled_snapshot_infos.len() - 1))
+                        .unwrap();
+                    self.focus = SnapshotUIFocus::ConfirmingDelete {
+                        msg: format!(
+                            "Type: {}\nData: {}\nTime: {}\nContained Subvolumes:\n{}",
+                            info.1[2], info.1[0], info.1[1], info.1[3],
+                        ),
+                        index: info.0,
+                    };
                 }
-                self.refresh_table_data();
             }
-            Confirm => todo!(),
+            Enter => todo!(),
             _ => (),
         }
 

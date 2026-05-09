@@ -32,11 +32,11 @@ impl AsRef<str> for SnapshotType {
     fn as_ref(&self) -> &str {
         use SnapshotType::*;
         match self {
-            Manually => "manually",
-            Daily => "daily",
-            Weekly => "weekly",
-            Monthly => "monthly",
-            Boot => "boot",
+            Manually => "Manually",
+            Daily => "Daily",
+            Weekly => "Weekly",
+            Monthly => "Monthly",
+            Boot => "Boot",
         }
     }
 }

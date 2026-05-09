@@ -36,7 +36,10 @@ impl BtrfsManager {
         // to make sure if this fails, the device won't be mounted
         let app_config = AppConfig::load_config()?;
 
-        mount_to_default_point(&device)?;
+        mount_to_default_point(&device).suggestion(format!(
+            "Please check if `{}` has been unmounted. Please unmount it manually if not.",
+            globals::MOUNT_POINT
+        ))?;
         // create a temporary object here to make sure
         // if subsequent operations fail, drop() will be executed
         // to release file lock and unmount the device

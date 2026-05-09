@@ -1,9 +1,9 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, HorizontalAlignment, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
     style::Modifier,
-    widgets::{Block, BorderType, List, ListState},
+    widgets::{Block, BorderType, Borders, Clear, List, ListState, Paragraph, Widget},
 };
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -42,8 +42,10 @@ pub enum AppEvent {
     Create,
     Delete,
     Rename,
-    Return,
-    Confirm,
+    Escape,
+    Enter,
+    Yes, // press `y` to confirm
+    No,  // press `n` to cancle
 }
 
 pub struct AppTUI {
@@ -138,15 +140,17 @@ impl AppTUI {
                 Char('a') => AppEvent::Create,
                 Char('d') | Char('x') => AppEvent::Delete,
                 Char('r') => AppEvent::Rename,
-                Char(' ') | Enter => AppEvent::Confirm,
+                Char(' ') | Enter => AppEvent::Enter,
+                Char('y') | Char('Y') => AppEvent::Yes,
+                Char('n') | Char('N') => AppEvent::No,
                 Char('q') => return Ok(true),
-                Esc => AppEvent::Return,
+                Esc => AppEvent::Escape,
                 _ => return Ok(false),
             };
 
             match self.focus {
                 AppFocus::Menu => {
-                    if app_event == AppEvent::Return {
+                    if app_event == AppEvent::Escape {
                         return Ok(true);
                     } else {
                         self.handle_menu_events(app_event)
@@ -177,7 +181,7 @@ impl AppTUI {
             Down => self.menu_state.select_next(),
             Upward | Top => self.menu_state.select_first(),
             Downward | Bottom => self.menu_state.select_last(),
-            Right | Confirm | WindowRight => self.focus = AppFocus::Body,
+            Right | Enter | WindowRight => self.focus = AppFocus::Body,
             _ => (),
         }
     }
@@ -226,4 +230,43 @@ pub fn get_sel_group_mut<'a>(
     } else {
         None
     }
+}
+
+/// show confirming widget
+pub fn show_confirm_popup(
+    frame: &mut Frame,
+    area: Rect,
+    title: impl Into<String>,
+    content: Paragraph,
+) {
+    let centered_area = area.centered(Constraint::Percentage(50), Constraint::Percentage(50));
+
+    let confirm_block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .style(globals::FOCUSED_COLOR)
+        .title(title.into())
+        .title_alignment(Alignment::Center);
+
+    let [content_area, yesno_area] = confirm_block.inner(centered_area).layout(
+        &Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).horizontal_margin(2),
+    );
+    let [yes_area, no_area] = yesno_area.layout(&Layout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Percentage(50),
+    ]));
+    frame.render_widget(Clear, centered_area);
+    frame.render_widget(confirm_block, centered_area);
+    frame.render_widget(
+        content.block(
+            Block::new()
+                .borders(Borders::BOTTOM)
+                .style(globals::FOCUSED_COLOR),
+        ),
+        content_area,
+    );
+    frame.render_widget(
+        Paragraph::new("[Y]es").style(Modifier::REVERSED).centered(),
+        yes_area,
+    );
+    frame.render_widget(Paragraph::new("(N)o").centered(), no_area);
 }
