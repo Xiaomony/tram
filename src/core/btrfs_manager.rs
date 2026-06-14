@@ -154,28 +154,13 @@ impl BtrfsManager {
         }
     }
 
-    // TODO: may need to delete this
-
-    // pub fn create_snapshot(&mut self, index: usize, snapshot_type: SnapshotType) -> CResult<()> {
-    //     let Some(group) = self.app_config.groups.get_mut(index) else {
-    //         return throw_invalid_index(index, "creating snapshot");
-    //     };
-    //     group.create_snapshot(snapshot_type)
-    // }
-
-    // pub fn delete_snapshot(&mut self, group_index: usize, snapshot_index: usize) -> CResult<()> {
-    //     let Some(group) = self.app_config.groups.get_mut(group_index) else {
-    //         return throw_invalid_index(group_index, "deleting snapshot(invalid group index)");
-    //     };
-    //     group.delete_snapshot(snapshot_index)
-    // }
-
     #[inline]
+    #[instrument]
     pub fn rename_group(
         &mut self,
         index: usize,
         new_name: impl Into<String> + std::fmt::Debug,
-    ) -> CResult<()> {
+    ) -> CResult<bool> {
         self.app_config.rename_group(index, new_name)
     }
 
@@ -199,8 +184,8 @@ impl BtrfsManager {
     }
 
     #[inline]
-    pub fn get_groups_mut(&mut self) -> &mut Vec<Group> {
-        &mut self.app_config.groups
+    pub fn get_mut_groups(&mut self) -> &mut Vec<Group> {
+        self.app_config.groups.as_mut()
     }
 
     #[inline]

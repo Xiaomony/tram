@@ -16,11 +16,6 @@ pub enum AppError {
     InvalidConfig,
     #[error("[Bug] This might be a bug. Please report it:\n\t{0}")]
     Bug(String),
-
-    #[error(
-        "[Duplicated Name] There exists another group named '{0}' or it's the same name as the old one."
-    )]
-    RenamingDuplicatedName(String),
 }
 
 #[inline]

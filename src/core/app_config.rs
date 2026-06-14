@@ -79,23 +79,25 @@ impl AppConfig {
         self.write_config()
     }
 
+    /// return false if there's a duplicated group name
     #[inline]
     #[instrument]
     pub fn rename_group(
         &mut self,
         index: usize,
         new_name: impl Into<String> + std::fmt::Debug,
-    ) -> CResult<()> {
+    ) -> CResult<bool> {
         let new_name = new_name.into();
         // check for duplicated name
         if self.groups.iter().any(|x| x.get_name() == new_name) {
-            return Err(AppError::RenamingDuplicatedName(new_name).into());
+            return Ok(false);
         }
         let Some(group) = self.groups.get_mut(index) else {
             return throw_invalid_index(index, "renaming group");
         };
         group.rename_group(new_name)?;
-        self.write_config()
+        self.write_config()?;
+        Ok(true)
     }
 
     #[inline]

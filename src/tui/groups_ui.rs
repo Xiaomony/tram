@@ -1,25 +1,35 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::Stylize,
-    widgets::{Block, BorderType, Row, Table},
+    style::{Modifier, Stylize},
+    text::Line,
+    widgets::{Block, BorderType, List, ListState, Paragraph, Row, Table, TableState},
 };
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::{btrfs_manager::BtrfsManager, error::CResult};
 use crate::tui::app_tui::{AppEvent, get_body_color};
 use crate::tui::menu::Menu;
+use crate::{
+    core::{btrfs_manager::BtrfsManager, error::CResult},
+    globals,
+};
 
 #[derive(PartialEq)]
 enum GroupsUIFocus {
     GroupList,
-    GroupInfo,
+    IncludedSubvols,
+    ExcludedSubvols,
 }
 
 pub struct GroupsUI {
     btrfs_mgr: Rc<RefCell<BtrfsManager>>,
+    /// the index of current selected snapshot group
     selected_group: Rc<RefCell<Option<usize>>>,
+    group_list_table_state: TableState,
     focus: GroupsUIFocus,
+    crr_focus_group_excluded_subvols: Vec<usize>,
+    inluded_subvols_list_state: ListState,
+    excluded_subvols_list_state: ListState,
 }
 
 impl GroupsUI {
@@ -30,34 +40,43 @@ impl GroupsUI {
         Self {
             btrfs_mgr,
             selected_group,
+            group_list_table_state: TableState::default().with_selected(None),
             focus: GroupsUIFocus::GroupList,
+            crr_focus_group_excluded_subvols: Vec::new(),
+            inluded_subvols_list_state: ListState::default().with_selected(Some(0)),
+            excluded_subvols_list_state: ListState::default().with_selected(Some(0)),
         }
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
         let [groups_area, groupinfo_area] = area.layout(&Layout::vertical([
-            Constraint::Percentage(40),
             Constraint::Percentage(60),
+            Constraint::Percentage(40),
         ]));
+
+        self.render_group_table(frame, focused, groups_area);
+        self.render_group_info(frame, focused, groupinfo_area);
+    }
+
+    /// body_focused: whether the focus is inside 'Groups' (not need to be inside the group table)
+    fn render_group_table(&mut self, frame: &mut Frame, body_focused: bool, area: Rect) {
+        let sel_group_index = self.selected_group.borrow();
+        if self.group_list_table_state.selected().is_none() {
+            self.group_list_table_state.select(*sel_group_index);
+        }
+
+        let mgr = self.btrfs_mgr.borrow();
         let groups_block = Block::bordered()
             .border_type(BorderType::Rounded)
             .title(Menu::Groups)
             .title_alignment(Alignment::Center);
-        let groupinfo_block = Block::bordered()
-            .border_type(BorderType::Rounded)
-            .title("  Group Info ")
-            .title_alignment(Alignment::Center)
-            .style(get_body_color(
-                focused && self.focus == GroupsUIFocus::GroupInfo,
-            ));
-        let mgr = self.btrfs_mgr.borrow();
 
-        // render groups table
         let group_rows: Vec<Row> = mgr
             .get_groups()
             .iter()
-            .map(|x| {
-                Row::new([
+            .enumerate()
+            .map(|(i, x)| {
+                let row = Row::new([
                     x.get_name().to_string(),
                     x.get_snapshots().len().to_string(),
                     // join the subvolumes together with "  " as delimiter
@@ -65,14 +84,21 @@ impl GroupsUI {
                         .iter()
                         .map(|y| y.to_string_lossy())
                         .fold(String::new(), |a, b| a + "  " + b.as_ref()),
-                ])
+                ]);
+                if let Some(index) = *sel_group_index
+                    && index == i
+                {
+                    return row.yellow().add_modifier(Modifier::BOLD | Modifier::ITALIC);
+                }
+                row
             })
             .collect();
         let header = Row::new(["Group Name", "Snapshot Count", "Contained Subvolumes"])
             .italic()
             .bold()
             .underlined();
-        let group_table = Table::new(
+
+        let mut group_table = Table::new(
             group_rows,
             [
                 Constraint::Percentage(25),
@@ -83,20 +109,272 @@ impl GroupsUI {
         .header(header)
         .block(groups_block)
         .style(get_body_color(
-            focused && self.focus == GroupsUIFocus::GroupList,
+            body_focused && self.focus == GroupsUIFocus::GroupList,
         ));
-        frame.render_widget(group_table, groups_area);
+        if body_focused {
+            group_table = group_table.row_highlight_style(Modifier::REVERSED);
+        }
+        frame.render_stateful_widget(group_table, area, &mut self.group_list_table_state);
+    }
 
-        // render current selected group information
-        frame.render_widget(groupinfo_block, groupinfo_area);
+    /// body_focused: whether the focus is inside 'Groups' (not need to be inside the group info)
+    fn render_group_info(&mut self, frame: &mut Frame, body_focused: bool, area: Rect) {
+        let groupinfo_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .title("  Group Info ")
+            .title_alignment(Alignment::Center)
+            .style(get_body_color(
+                body_focused
+                    && (self.focus == GroupsUIFocus::IncludedSubvols
+                        || self.focus == GroupsUIFocus::ExcludedSubvols),
+            ));
+        let mgr = self.btrfs_mgr.borrow();
+        let groups = mgr.get_groups();
+
+        if let Some(focused_group) = self
+            .group_list_table_state
+            .selected()
+            .and_then(|x| groups.get(x.clamp(0, groups.len() - 1)))
+        {
+            let [left_area, right_area] =
+                groupinfo_block.inner(area).layout(&Layout::horizontal([
+                    Constraint::Percentage(50),
+                    Constraint::Percentage(50),
+                ]));
+            let [
+                group_name_area,
+                included_subvol_list_title_area,
+                included_subvol_list_area,
+            ] = left_area.layout(&Layout::vertical([
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Fill(1),
+            ]));
+            let included_subvol_list_area =
+                included_subvol_list_area.inner(ratatui::layout::Margin {
+                    horizontal: 2,
+                    vertical: 0,
+                });
+            let [excluded_subvol_list_title_area, excluded_subvol_list_area] =
+                right_area.layout(&Layout::vertical([
+                    Constraint::Length(1),
+                    Constraint::Fill(1),
+                ]));
+            let excluded_subvol_list_area =
+                excluded_subvol_list_area.inner(ratatui::layout::Margin {
+                    horizontal: 2,
+                    vertical: 0,
+                });
+            frame.render_widget(groupinfo_block, area);
+
+            // render group name
+            let group_name = Paragraph::new(vec![
+                Line::from("Group Name:").style(globals::BODY_COLOR),
+                format!("    {}", focused_group.get_name())
+                    .bold()
+                    .italic()
+                    .cyan()
+                    .into(),
+            ]);
+            frame.render_widget(group_name, group_name_area);
+
+            // render included subvolumes
+            let included_subvol_list_focused =
+                body_focused && self.focus == GroupsUIFocus::IncludedSubvols;
+            let included_subvol_list_color = get_body_color(included_subvol_list_focused);
+            let mut included_subvol_list = List::from_iter(
+                focused_group
+                    .get_subvolumes()
+                    .iter()
+                    .map(|x| x.to_string_lossy()),
+            )
+            .style(included_subvol_list_color);
+            frame.render_widget(
+                Line::from("Included Subvolumes(Press Enter to exclude):")
+                    .style(included_subvol_list_color),
+                included_subvol_list_title_area,
+            );
+
+            if included_subvol_list_focused {
+                included_subvol_list = included_subvol_list.highlight_style(Modifier::REVERSED);
+            }
+
+            if focused_group.get_subvolumes().is_empty() {
+                frame.render_widget(
+                    Line::from("No included subvolumes")
+                        .style(globals::WARNING_COLOR)
+                        .bold()
+                        .italic(),
+                    included_subvol_list_area,
+                );
+            } else {
+                frame.render_stateful_widget(
+                    included_subvol_list,
+                    included_subvol_list_area,
+                    &mut self.inluded_subvols_list_state,
+                );
+            }
+
+            // render excluded snapshots
+            let excluded_subvol_list_focused =
+                body_focused && self.focus == GroupsUIFocus::ExcludedSubvols;
+            let excluded_subvol_list_color = get_body_color(excluded_subvol_list_focused);
+            frame.render_widget(
+                Line::from("Excluded Subvolumes(Press Enter to include):")
+                    .style(excluded_subvol_list_color),
+                excluded_subvol_list_title_area,
+            );
+            self.crr_focus_group_excluded_subvols = mgr
+                .get_subvolumes()
+                .iter()
+                .enumerate()
+                .filter_map(|(i, x)| {
+                    if focused_group.get_subvolumes().iter().all(|y| x != y) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect(); // update the excluded subvolumes
+            let mut excluded_subvol_list = List::from_iter(
+                self.crr_focus_group_excluded_subvols
+                    .iter()
+                    .map(|&x| mgr.get_subvolumes().get(x).unwrap().to_string_lossy()),
+            )
+            .style(excluded_subvol_list_color);
+            if excluded_subvol_list_focused {
+                excluded_subvol_list = excluded_subvol_list.highlight_style(Modifier::REVERSED);
+            }
+            if self.crr_focus_group_excluded_subvols.is_empty() {
+                frame.render_widget(
+                    Line::from("No excluded subvolumes")
+                        .style(globals::WARNING_COLOR)
+                        .bold()
+                        .italic(),
+                    excluded_subvol_list_area,
+                );
+            } else {
+                frame.render_stateful_widget(
+                    excluded_subvol_list,
+                    excluded_subvol_list_area,
+                    &mut self.excluded_subvols_list_state,
+                );
+            }
+        } else {
+            let msg = Paragraph::new("No avaliable group to display.")
+                .block(groupinfo_block)
+                .alignment(Alignment::Center)
+                .style(globals::WARNING_COLOR)
+                .italic()
+                .bold();
+
+            frame.render_widget(msg, area);
+        }
     }
 
     pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
         use AppEvent::*;
+
         match event {
-            Left | WindowLeft | Escape => return Ok(true),
+            Left => {
+                if self.focus == GroupsUIFocus::ExcludedSubvols {
+                    self.focus = GroupsUIFocus::IncludedSubvols;
+                } else {
+                    return Ok(true);
+                }
+            }
+            Right => {
+                if self.focus == GroupsUIFocus::IncludedSubvols {
+                    self.focus = GroupsUIFocus::ExcludedSubvols;
+                }
+            }
+            WindowLeft | Escape => return Ok(true),
             WindowUp => self.focus = GroupsUIFocus::GroupList,
-            WindowDown => self.focus = GroupsUIFocus::GroupInfo,
+            WindowDown => self.focus = GroupsUIFocus::IncludedSubvols,
+
+            Up => {
+                use GroupsUIFocus::*;
+                match self.focus {
+                    GroupList => self.group_list_table_state.select_previous(),
+                    IncludedSubvols => self.inluded_subvols_list_state.select_previous(),
+                    ExcludedSubvols => self.excluded_subvols_list_state.select_previous(),
+                }
+            }
+            Down => {
+                use GroupsUIFocus::*;
+                match self.focus {
+                    GroupList => self.group_list_table_state.select_next(),
+                    IncludedSubvols => self.inluded_subvols_list_state.select_next(),
+                    ExcludedSubvols => self.excluded_subvols_list_state.select_next(),
+                }
+            }
+            Top => {
+                use GroupsUIFocus::*;
+                match self.focus {
+                    GroupList => self.group_list_table_state.select_first(),
+                    IncludedSubvols => self.inluded_subvols_list_state.select_first(),
+                    ExcludedSubvols => self.excluded_subvols_list_state.select_first(),
+                }
+            }
+            Bottom => {
+                use GroupsUIFocus::*;
+                match self.focus {
+                    GroupList => self.group_list_table_state.select_last(),
+                    IncludedSubvols => self.inluded_subvols_list_state.select_last(),
+                    ExcludedSubvols => self.excluded_subvols_list_state.select_last(),
+                }
+            }
+
+            Enter => {
+                use GroupsUIFocus::*;
+                match self.focus {
+                    GroupList => {
+                        let mgr = self.btrfs_mgr.borrow();
+                        let groups = mgr.get_groups();
+                        if !groups.is_empty()
+                            && let Some(focused_group_index) =
+                                self.group_list_table_state.selected()
+                        {
+                            *self.selected_group.borrow_mut() =
+                                Some(focused_group_index.clamp(0, groups.len() - 1));
+                        }
+                    }
+                    IncludedSubvols => {
+                        let mut mgr = self.btrfs_mgr.borrow_mut();
+                        let groups = mgr.get_mut_groups();
+                        let len = groups.len();
+                        if let Some(focused_group) = self
+                            .group_list_table_state
+                            .selected()
+                            .and_then(|x| groups.get_mut(x.clamp(0, len - 1)))
+                            && !focused_group.get_subvolumes().is_empty()
+                            && let Some(i) = self.inluded_subvols_list_state.selected()
+                        {
+                            focused_group.remove_subvolume(
+                                i.clamp(0, focused_group.get_subvolumes().len() - 1),
+                            )?;
+                        }
+                    }
+                    ExcludedSubvols => {
+                        let mut mgr = self.btrfs_mgr.borrow_mut();
+                        // let groups = mgr.get_mut_groups();
+                        // let len = groups.len();
+
+                        if !self.crr_focus_group_excluded_subvols.is_empty()
+                            && let Some(focused_group_index) = self
+                                .group_list_table_state
+                                .selected()
+                                .map(|x| x.clamp(0, mgr.get_groups().len() - 1))
+                            && let Some(i) = self.excluded_subvols_list_state.selected()
+                            && let Some(&subvol_index) = self
+                                .crr_focus_group_excluded_subvols
+                                .get(i.clamp(0, self.crr_focus_group_excluded_subvols.len() - 1))
+                        {
+                            mgr.add_subvol_to_group(focused_group_index, subvol_index)?;
+                        }
+                    }
+                }
+            }
             _ => (),
         }
         Ok(false)

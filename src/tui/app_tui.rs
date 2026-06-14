@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
-    style::{Color, Modifier, Styled},
+    style::{Color, Modifier, Stylize},
     widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph},
 };
 use std::cell::{Ref, RefCell, RefMut};
@@ -98,10 +98,7 @@ impl AppTUI {
                 .split(menu_block.inner(area));
             let crr_group_prompt = Paragraph::new(vec![
                 "Current Selected Group:\n".into(),
-                crr_group
-                    .get_name()
-                    .set_style(globals::WARNING_COLOR)
-                    .into(),
+                crr_group.get_name().yellow().bold().italic().into(),
             ])
             .alignment(Alignment::Center);
             frame.render_widget(menu_block, area);
@@ -244,12 +241,12 @@ pub fn get_sel_group_mut<'a>(
         && index < mgr.get_groups().len()
     {
         Some(RefMut::map(mgr, |m| {
-            m.get_groups_mut().get_mut(index).unwrap()
+            m.get_mut_groups().get_mut(index).unwrap()
         }))
     } else if !mgr.get_groups().is_empty() {
         *selected_group.borrow_mut() = Some(0);
         Some(RefMut::map(mgr, |m| {
-            m.get_groups_mut().first_mut().unwrap()
+            m.get_mut_groups().first_mut().unwrap()
         }))
     } else {
         None

@@ -152,6 +152,16 @@ impl Group {
     }
 
     #[inline]
+    pub fn remove_subvolume(&mut self, index: usize) -> CResult<()> {
+        if index < self.subvolumes.len() {
+            self.subvolumes.remove(index);
+            Ok(())
+        } else {
+            throw_invalid_index(index, "removing subvolumes from a group")
+        }
+    }
+
+    #[inline]
     pub fn get_subvolumes(&self) -> &[PathBuf] {
         &self.subvolumes
     }
