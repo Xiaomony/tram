@@ -84,7 +84,11 @@ impl Group {
     }
 
     #[instrument]
-    pub fn create_snapshot(&mut self, snapshot_type: SnapshotType) -> CResult<()> {
+    /// return false if no subvolumes included by the group
+    pub fn create_snapshot(&mut self, snapshot_type: SnapshotType) -> CResult<bool> {
+        if self.subvolumes.is_empty() {
+            return Ok(false);
+        }
         let (date, time) = get_current_date_time();
         let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
             .join(&self.group_name)
@@ -116,7 +120,7 @@ impl Group {
             }
         }
         self.snapshots.push(new_snapshot);
-        Ok(())
+        Ok(true)
     }
 
     #[instrument]

@@ -46,7 +46,7 @@ pub fn exec_command<T: AsRef<OsStr>, E: AsRef<[T]>>(
             command,
             err_msg: err_msg.to_string(),
         })
-        .warning(format!("'{command} {}' failed.", args_str()))
+        .warning(format!("Command '{command} {}' failed.", args_str()))
     }
 }
 

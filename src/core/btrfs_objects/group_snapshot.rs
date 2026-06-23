@@ -44,6 +44,10 @@ impl GroupSnapshot {
 
     #[instrument]
     pub fn delete(self, group_name: &str) -> CResult<()> {
+        // do nothing if no subvolumes included in this snapshot
+        if self.subvolume_snapshots.is_empty() {
+            return Ok(());
+        }
         let fullpaths = self
             .subvolume_snapshots
             .iter()
@@ -54,19 +58,22 @@ impl GroupSnapshot {
             .collect();
         exec_command("btrfs", args)?;
 
-        // remove the directory of the current snapshot group
+        // remove the directory of the current snapshot group if exists
         let group_snapshot_fullpath = globals::SNAPSHOT_GROUP_DIR_PATH
             .join(group_name)
             .join(self.snapshot_type.as_ref())
             .join(self.date + "_" + &self.time);
-        remove_dir_all(&group_snapshot_fullpath)
-            .warning("Fail to remove snapshot directory.")
-            .with_suggestion(|| {
-                format!(
-                    "Please run the program again and manually remove '{}' before it exits.",
-                    group_snapshot_fullpath.to_string_lossy()
-                )
-            })?;
+
+        if std::fs::exists(&group_snapshot_fullpath)? {
+            remove_dir_all(&group_snapshot_fullpath)
+                .warning("Fail to remove snapshot directory.")
+                .with_suggestion(|| {
+                    format!(
+                        "Please run the program again and manually remove '{}' before it exits.",
+                        group_snapshot_fullpath.to_string_lossy()
+                    )
+                })?;
+        }
         Ok(())
     }
 

@@ -24,7 +24,12 @@ use crate::{
 enum SnapshotUIFocus {
     ManualSnapshot,
     ScheduledSnapshot,
-    ConfirmingDelete { msg: String, index: usize },
+    ConfirmingDelete {
+        msg: String,
+        index: usize,
+    },
+    /// show a warning when attempting to create snapshot while no subvolumes included
+    NoSubvolWarning,
 }
 
 pub struct SnapshotsUI {
@@ -146,14 +151,26 @@ impl SnapshotsUI {
             focused && self.focus == SnapshotUIFocus::ScheduledSnapshot,
         );
 
-        if let SnapshotUIFocus::ConfirmingDelete { ref msg, .. } = self.focus {
-            app_tui::show_confirm_popup(
-                frame,
-                frame.area(),
-                "Delete the following snapshot?",
-                Paragraph::new(msg.as_str()),
-                true,
-            );
+        match self.focus {
+            SnapshotUIFocus::ConfirmingDelete { ref msg, .. } => {
+                app_tui::show_confirm_popup(
+                    frame,
+                    frame.area(),
+                    "Delete the following snapshot?",
+                    Paragraph::new(msg.as_str()),
+                    true,
+                );
+            }
+            SnapshotUIFocus::NoSubvolWarning => {
+                app_tui::show_confirm_popup(
+                    frame,
+                    frame.area(),
+                    "No subvolumes included.",
+                    Paragraph::new("The current group doesn't include any subvolumes"),
+                    false,
+                );
+            }
+            _ => (),
         }
     }
 
@@ -185,7 +202,7 @@ impl SnapshotsUI {
                 area,
             );
         } else {
-            let header = Row::new(["Date", "Time", "Contained Subvolumes"])
+            let header = Row::new(["Date", "Time", "Included Subvolumes"])
                 .style(Style::new().bold().italic().underlined());
             let widths = [
                 Constraint::Percentage(30),
@@ -235,7 +252,7 @@ impl SnapshotsUI {
                 area,
             );
         } else {
-            let header = Row::new(["Date", "Time", "Type", "Contained Subvolumes"])
+            let header = Row::new(["Date", "Time", "Type", "Included Subvolumes"])
                 .bold()
                 .italic()
                 .underlined();
@@ -330,12 +347,16 @@ impl SnapshotsUI {
             WindowUp => self.focus = SnapshotUIFocus::ManualSnapshot,
             WindowDown => self.focus = SnapshotUIFocus::ScheduledSnapshot,
             Create
-                if let Some(mut group) =
-                    get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) =>
+                if self.focus == SnapshotUIFocus::ManualSnapshot
+                    && let Some(mut group) =
+                        get_sel_group_mut(&self.btrfs_mgr, &self.selected_group) =>
             {
-                group
+                if !group
                     .create_snapshot(SnapshotType::Manually)
-                    .warning("Fail to create new snapshot.")?;
+                    .warning("Fail to create new snapshot.")?
+                {
+                    self.focus = SnapshotUIFocus::NoSubvolWarning
+                }
             }
             Delete => {
                 if self.focus == SnapshotUIFocus::ManualSnapshot
@@ -348,7 +369,7 @@ impl SnapshotsUI {
                         .unwrap();
                     self.focus = SnapshotUIFocus::ConfirmingDelete {
                         msg: format!(
-                            "Type: {}\nData: {}\nTime: {}\nContained Subvolumes:\n  {}",
+                            "Type: {}\nData: {}\nTime: {}\nIncluded Subvolumes:\n  {}",
                             SnapshotType::Manually,
                             info.1,
                             info.2,
@@ -365,7 +386,7 @@ impl SnapshotsUI {
                         .unwrap();
                     self.focus = SnapshotUIFocus::ConfirmingDelete {
                         msg: format!(
-                            "Type: {}\nData: {}\nTime: {}\nContained Subvolumes:\n  {}",
+                            "Type: {}\nData: {}\nTime: {}\nIncluded Subvolumes:\n  {}",
                             info.1,
                             info.2,
                             info.3,
@@ -376,7 +397,12 @@ impl SnapshotsUI {
                 }
             }
             // TODO: here need implementation
-            Enter => todo!(),
+            Enter => match self.focus {
+                SnapshotUIFocus::NoSubvolWarning => self.focus = SnapshotUIFocus::ManualSnapshot,
+                SnapshotUIFocus::ManualSnapshot => todo!(),
+                SnapshotUIFocus::ScheduledSnapshot => todo!(),
+                _ => (),
+            },
             _ => (),
         }
 

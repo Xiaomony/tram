@@ -514,11 +514,13 @@ May caused by one of the following reasons:
 
             Rename if self.focus == GroupsUIFocus::GroupList => {
                 let mgr = self.btrfs_mgr.borrow();
+                let groups = mgr.get_groups();
                 if let Some(index) = self.group_list_table_state.selected()
-                    && !mgr.get_groups().is_empty()
+                    && !groups.is_empty()
                 {
-                    let index = index.clamp(0, mgr.get_groups().len() - 1);
-                    self.input.reset();
+                    let index = index.clamp(0, groups.len() - 1);
+                    let old_name = groups.get(index).unwrap().get_name();
+                    self.input = Input::new(old_name.into());
                     self.focus = GroupsUIFocus::RenameGroupInputing { index };
                     return Ok((false, true));
                 }
