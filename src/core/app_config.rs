@@ -70,13 +70,20 @@ impl AppConfig {
 
     #[inline]
     #[instrument]
+    /// return false if there's a duplicated group name
     pub fn add_new_group(
         &mut self,
-        group_name: impl Into<String> + std::fmt::Debug,
+        new_group_name: impl Into<String> + std::fmt::Debug,
         subvolumes: Vec<PathBuf>,
-    ) -> CResult<()> {
-        self.groups.push(Group::new(group_name.into(), subvolumes));
-        self.write_config()
+    ) -> CResult<bool> {
+        let new_group_name = new_group_name.into();
+        if self.check_duplicated_name(&new_group_name) {
+            return Ok(false);
+        }
+        self.groups
+            .push(Group::new(new_group_name.into(), subvolumes));
+        self.write_config()?;
+        Ok(true)
     }
 
     #[instrument]
@@ -86,6 +93,13 @@ impl AppConfig {
         }
         self.groups.remove(index).delete_group()?;
         self.write_config()
+    }
+
+    #[inline]
+    /// return true if the group name has already existed
+    pub fn check_duplicated_name(&self, name: impl AsRef<str>) -> bool {
+        let name = name.as_ref();
+        self.groups.iter().any(|x| x.get_name() == name)
     }
 
     /// return false if there's a duplicated group name
@@ -98,7 +112,7 @@ impl AppConfig {
     ) -> CResult<bool> {
         let new_name = new_name.into();
         // check for duplicated name
-        if self.groups.iter().any(|x| x.get_name() == new_name) {
+        if self.check_duplicated_name(&new_name) {
             return Ok(false);
         }
         let Some(group) = self.groups.get_mut(index) else {
@@ -108,9 +122,6 @@ impl AppConfig {
         self.write_config()?;
         Ok(true)
     }
-
-    #[inline]
-    pub fn add_subvol_to_group(&mut self) {}
 
     #[inline]
     pub fn get_schedule(&self) -> AutoSnapshotSchedule {

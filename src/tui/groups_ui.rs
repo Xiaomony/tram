@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, List, ListState, Paragraph, Row, Table, TableState},
 };
 use std::{cell::RefCell, rc::Rc};
+use tui_input::{Input, backend::crossterm::EventHandler};
 
 use crate::tui::app_tui::{self, AppEvent, get_body_color};
 use crate::tui::menu::Menu;
@@ -20,6 +21,9 @@ enum GroupsUIFocus {
     IncludedSubvols,
     ExcludedSubvols,
     DeleteGroup { msg: String, index: usize },
+    CreateGroupInputing,
+    RenameGroupInputing { index: usize },
+    InvalidGroupNamePopup,
 }
 
 pub struct GroupsUI {
@@ -29,8 +33,9 @@ pub struct GroupsUI {
     group_list_table_state: TableState,
     focus: GroupsUIFocus,
     crr_focus_group_excluded_subvols: Vec<usize>,
-    inluded_subvols_list_state: ListState,
+    included_subvols_list_state: ListState,
     excluded_subvols_list_state: ListState,
+    input: Input,
 }
 
 impl GroupsUI {
@@ -44,8 +49,9 @@ impl GroupsUI {
             group_list_table_state: TableState::default().with_selected(None),
             focus: GroupsUIFocus::GroupList,
             crr_focus_group_excluded_subvols: Vec::new(),
-            inluded_subvols_list_state: ListState::default().with_selected(Some(0)),
+            included_subvols_list_state: ListState::default().with_selected(Some(0)),
             excluded_subvols_list_state: ListState::default().with_selected(Some(0)),
+            input: Input::default(),
         }
     }
 
@@ -57,14 +63,43 @@ impl GroupsUI {
 
         self.render_group_table(frame, focused, groups_area);
         self.render_group_info(frame, focused, groupinfo_area);
-        if let GroupsUIFocus::DeleteGroup { ref msg, .. } = self.focus {
-            app_tui::show_confirm_popup(
+        match self.focus {
+            GroupsUIFocus::DeleteGroup { ref msg, .. } => {
+                app_tui::show_confirm_popup(
+                    frame,
+                    frame.area(),
+                    "Delete the following group?",
+                    Paragraph::new(msg.as_str()),
+                    true,
+                );
+            }
+            GroupsUIFocus::CreateGroupInputing => app_tui::render_input_widget(
                 frame,
-                frame.area(),
-                "Delete the following group?",
-                Paragraph::new(msg.as_str()),
-                true,
-            );
+                area,
+                &self.input,
+                "Create Group (letters, numbers and _ only)",
+            ),
+            GroupsUIFocus::RenameGroupInputing { .. } => app_tui::render_input_widget(
+                frame,
+                area,
+                &self.input,
+                "Rename Group (letters, numbers and _ only)",
+            ),
+            GroupsUIFocus::InvalidGroupNamePopup => {
+                app_tui::show_confirm_popup(
+                    frame,
+                    frame.area(),
+                    "Invalid Group Name",
+                    Paragraph::new(
+                        r"You inputed a invalid group name.
+May caused by one of the following reasons:
+  1. The group name has already existed.
+  2. Your group name contains characters other than letters, numbers, and underscores",
+                    ),
+                    false,
+                );
+            }
+            _ => (),
         }
     }
 
@@ -213,7 +248,7 @@ impl GroupsUI {
                 frame.render_stateful_widget(
                     included_subvol_list,
                     included_subvol_list_area,
-                    &mut self.inluded_subvols_list_state,
+                    &mut self.included_subvols_list_state,
                 );
             }
 
@@ -274,23 +309,66 @@ impl GroupsUI {
         }
     }
 
-    pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
+    /// return a tuple containing
+    /// (whether the focus is returned, is inputing)
+    pub fn handle_events(
+        &mut self,
+        event: AppEvent,
+        raw_event: crossterm::event::Event,
+    ) -> CResult<(bool, bool)> {
         use AppEvent::*;
+
+        if matches!(
+            self.focus,
+            GroupsUIFocus::CreateGroupInputing | GroupsUIFocus::RenameGroupInputing { .. }
+        ) {
+            match event {
+                Escape => self.focus = GroupsUIFocus::GroupList,
+
+                Enter => {
+                    let succeed = match self.focus {
+                        GroupsUIFocus::CreateGroupInputing => {
+                            let new_name = self.input.value();
+                            new_name
+                                .chars()
+                                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                                && self.btrfs_mgr.borrow_mut().add_group(new_name)?
+                        }
+                        GroupsUIFocus::RenameGroupInputing { index } => self
+                            .btrfs_mgr
+                            .borrow_mut()
+                            .rename_group(index, self.input.value())?,
+                        _ => true,
+                    };
+                    if succeed {
+                        self.focus = GroupsUIFocus::GroupList;
+                    } else {
+                        self.focus = GroupsUIFocus::InvalidGroupNamePopup;
+                    }
+                }
+                _ => {
+                    self.input.handle_event(&raw_event);
+                    return Ok((false, true));
+                }
+            }
+            return Ok((false, false));
+        }
 
         match event {
             Left => {
                 if self.focus == GroupsUIFocus::ExcludedSubvols {
                     self.focus = GroupsUIFocus::IncludedSubvols;
                 } else {
-                    return Ok(true);
+                    return Ok((true, false));
                 }
             }
-            Right => {
-                if self.focus == GroupsUIFocus::IncludedSubvols {
-                    self.focus = GroupsUIFocus::ExcludedSubvols;
-                }
+            Right | WindowRight if self.focus == GroupsUIFocus::IncludedSubvols => {
+                self.focus = GroupsUIFocus::ExcludedSubvols;
             }
-            WindowLeft | Escape => return Ok(true),
+            WindowLeft if self.focus == GroupsUIFocus::ExcludedSubvols => {
+                self.focus = GroupsUIFocus::IncludedSubvols
+            }
+            WindowLeft | Escape => return Ok((true, false)),
             WindowUp => self.focus = GroupsUIFocus::GroupList,
             WindowDown => self.focus = GroupsUIFocus::IncludedSubvols,
 
@@ -298,7 +376,17 @@ impl GroupsUI {
                 use GroupsUIFocus::*;
                 match self.focus {
                     GroupList => self.group_list_table_state.select_previous(),
-                    IncludedSubvols => self.inluded_subvols_list_state.select_previous(),
+                    IncludedSubvols
+                        if let Some(0) = self.included_subvols_list_state.selected() =>
+                    {
+                        self.focus = GroupList
+                    }
+                    IncludedSubvols => self.included_subvols_list_state.select_previous(),
+                    ExcludedSubvols
+                        if let Some(0) = self.excluded_subvols_list_state.selected() =>
+                    {
+                        self.focus = GroupList
+                    }
                     ExcludedSubvols => self.excluded_subvols_list_state.select_previous(),
                     _ => (),
                 }
@@ -307,7 +395,7 @@ impl GroupsUI {
                 use GroupsUIFocus::*;
                 match self.focus {
                     GroupList => self.group_list_table_state.select_next(),
-                    IncludedSubvols => self.inluded_subvols_list_state.select_next(),
+                    IncludedSubvols => self.included_subvols_list_state.select_next(),
                     ExcludedSubvols => self.excluded_subvols_list_state.select_next(),
                     _ => (),
                 }
@@ -316,7 +404,7 @@ impl GroupsUI {
                 use GroupsUIFocus::*;
                 match self.focus {
                     GroupList => self.group_list_table_state.select_first(),
-                    IncludedSubvols => self.inluded_subvols_list_state.select_first(),
+                    IncludedSubvols => self.included_subvols_list_state.select_first(),
                     ExcludedSubvols => self.excluded_subvols_list_state.select_first(),
                     _ => (),
                 }
@@ -325,7 +413,7 @@ impl GroupsUI {
                 use GroupsUIFocus::*;
                 match self.focus {
                     GroupList => self.group_list_table_state.select_last(),
-                    IncludedSubvols => self.inluded_subvols_list_state.select_last(),
+                    IncludedSubvols => self.included_subvols_list_state.select_last(),
                     ExcludedSubvols => self.excluded_subvols_list_state.select_last(),
                     _ => (),
                 }
@@ -355,7 +443,7 @@ impl GroupsUI {
                             .map(|x| x.clamp(0, groups.len() - 1))
                         // .and_then(|x| groups.get_mut(x.clamp(0, len - 1)))
                         // && !focused_group.get_subvolumes().is_empty()
-                        && let Some(i) = self.inluded_subvols_list_state.selected()
+                        && let Some(i) = self.included_subvols_list_state.selected()
                         {
                             mgr.remove_subvol_from_group(focused_group_index, i)?;
                             // let i = i.clamp(0, focused_group.get_subvolumes().len() - 1),
@@ -377,6 +465,9 @@ impl GroupsUI {
                         {
                             mgr.add_subvol_to_group(focused_group_index, subvol_index)?;
                         }
+                    }
+                    InvalidGroupNamePopup => {
+                        self.focus = GroupList;
                     }
                     _ => (),
                 }
@@ -414,8 +505,26 @@ impl GroupsUI {
             No if let GroupsUIFocus::DeleteGroup { .. } = self.focus => {
                 self.focus = GroupsUIFocus::GroupList;
             }
+
+            Create if self.focus == GroupsUIFocus::GroupList => {
+                self.input.reset();
+                self.focus = GroupsUIFocus::CreateGroupInputing;
+                return Ok((false, true));
+            }
+
+            Rename if self.focus == GroupsUIFocus::GroupList => {
+                let mgr = self.btrfs_mgr.borrow();
+                if let Some(index) = self.group_list_table_state.selected()
+                    && !mgr.get_groups().is_empty()
+                {
+                    let index = index.clamp(0, mgr.get_groups().len() - 1);
+                    self.input.reset();
+                    self.focus = GroupsUIFocus::RenameGroupInputing { index };
+                    return Ok((false, true));
+                }
+            }
             _ => (),
         }
-        Ok(false)
+        Ok((false, false))
     }
 }

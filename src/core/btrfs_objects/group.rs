@@ -151,9 +151,11 @@ impl Group {
         for obj in self.snapshots {
             obj.delete(&self.group_name)?;
         }
-        // remove relative directory
+        // remove relative directory if exist
         let group_dir = globals::SNAPSHOT_GROUP_DIR_PATH.join(self.group_name);
-        std::fs::remove_dir_all(group_dir)?;
+        if std::fs::exists(&group_dir)? {
+            std::fs::remove_dir_all(group_dir)?;
+        }
         Ok(())
     }
 

@@ -375,6 +375,7 @@ impl SnapshotsUI {
                     };
                 }
             }
+            // TODO: here need implementation
             Enter => todo!(),
             _ => (),
         }

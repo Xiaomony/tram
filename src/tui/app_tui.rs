@@ -1,12 +1,14 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Offset, Rect},
     style::{Color, Modifier, Stylize},
+    text::Line,
     widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Wrap},
 };
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
+use tui_input::Input;
 
 use crate::tui::menu::Menu;
 use crate::tui::snapshots_ui::SnapshotsUI;
@@ -49,6 +51,8 @@ pub enum AppEvent {
     Enter,
     Yes, // press `y` to confirm
     No,  // press `n` to cancle
+
+    Other, // reserved for input mode
 }
 
 pub struct AppTUI {
@@ -60,6 +64,7 @@ pub struct AppTUI {
     /// the index of current selected snapshot group
     _selected_group: Rc<RefCell<Option<usize>>>,
     focus: AppFocus,
+    is_inputing: bool,
 }
 
 impl AppTUI {
@@ -73,6 +78,7 @@ impl AppTUI {
             _btrfs_mgr: btrfs_mgr,
             _selected_group: selected_group,
             focus: AppFocus::Menu,
+            is_inputing: false,
         }
     }
 
@@ -137,7 +143,8 @@ impl AppTUI {
 
     // returns whether the program should exit
     pub fn read_events(&mut self) -> CResult<bool> {
-        if let Event::Key(key_event) = event::read()? {
+        let raw_event = event::read()?;
+        if let Event::Key(ref key_event) = raw_event {
             use KeyCode::*;
             let mods = key_event.modifiers;
             let app_event = match key_event.code {
@@ -164,9 +171,11 @@ impl AppTUI {
                 Char(' ') | Enter => AppEvent::Enter,
                 Char('y') | Char('Y') => AppEvent::Yes,
                 Char('n') | Char('N') => AppEvent::No,
-                Char('q') => return Ok(true),
                 Esc => AppEvent::Escape,
-                _ => return Ok(false),
+                Char('[') if mods == KeyModifiers::CONTROL => AppEvent::Escape,
+                Char('q') if !self.is_inputing => return Ok(true),
+                _ if !self.is_inputing => return Ok(false),
+                _ => AppEvent::Other,
             };
 
             match self.focus {
@@ -181,7 +190,12 @@ impl AppTUI {
                     use crate::tui::menu::Menu::*;
                     if match self.get_crr_menu_item() {
                         Snapshots => self.snapshots_ui.handle_events(app_event)?,
-                        Groups => self.groups_ui.handle_events(app_event)?,
+                        Groups => {
+                            let (return_focus, is_inputing) =
+                                self.groups_ui.handle_events(app_event, raw_event)?;
+                            self.is_inputing = is_inputing;
+                            return_focus
+                        }
                         Subvolumes => self.subvolumes_ui.handle_events(app_event)?,
                         BrokenSnapshots => false,
                         Settings => false,
@@ -309,6 +323,32 @@ pub fn show_confirm_popup(
             bottom_area,
         );
     }
+}
+
+/// render a input widget at the top of given area
+pub fn render_input_widget<'a>(
+    frame: &mut Frame,
+    area: Rect,
+    input: &Input,
+    title: impl Into<Line<'a>>,
+) {
+    let mut area = area
+        .centered_horizontally(Constraint::Percentage(50))
+        .offset(Offset::new(0, 4));
+    area.height = 3;
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title_top(title)
+        .style(globals::FOCUSED_COLOR);
+    let scroll = input.visual_scroll((area.width.max(3) - 3) as usize);
+    let input_widget = Paragraph::new(input.value()).scroll((0, scroll as u16));
+
+    frame.render_widget(Clear, area);
+    frame.render_widget(input_widget, block.inner(area));
+    frame.render_widget(block, area);
+    // render cursor
+    let x = input.visual_cursor().max(scroll) - scroll + 1;
+    frame.set_cursor_position((area.x + x as u16, area.y + 1));
 }
 
 #[inline]

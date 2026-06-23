@@ -155,6 +155,11 @@ impl BtrfsManager {
     }
 
     #[inline]
+    pub fn add_group(&mut self, group_name: impl Into<String> + std::fmt::Debug) -> CResult<bool> {
+        self.app_config.add_new_group(group_name, Vec::new())
+    }
+
+    #[inline]
     #[instrument]
     pub fn rename_group(
         &mut self,
