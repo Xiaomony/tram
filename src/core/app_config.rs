@@ -80,8 +80,7 @@ impl AppConfig {
         if self.check_duplicated_name(&new_group_name) {
             return Ok(false);
         }
-        self.groups
-            .push(Group::new(new_group_name.into(), subvolumes));
+        self.groups.push(Group::new(new_group_name, subvolumes));
         self.write_config()?;
         Ok(true)
     }

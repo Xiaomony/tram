@@ -3,7 +3,7 @@ pub type CResult<T> = color_eyre::Result<T>;
 pub enum AppError {
     #[error("[Child Process Error] command '{command}' cause an error:\n\t{err_msg}")]
     ChildProcess {
-        /// Use &'static str to ensure that the command is defined in compile time
+        /// Use &'static str because all commands should be defined at compile time
         /// Cause this program need root permission, this forbids external command injection
         command: &'static str,
         err_msg: String,

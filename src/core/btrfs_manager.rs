@@ -14,7 +14,6 @@ use crate::globals;
 
 #[derive(Debug)]
 pub struct BtrfsManager {
-    _device: String,
     file_lock: FileLock,
     subvolumes: Vec<PathBuf>,
     app_config: AppConfig,
@@ -45,7 +44,6 @@ impl BtrfsManager {
         // if subsequent operations fail, drop() will be executed
         // to release file lock and unmount the device
         let mut new_obj = Self {
-            _device: device,
             file_lock,
             subvolumes: Vec::new(),
             app_config,
@@ -154,6 +152,17 @@ impl BtrfsManager {
         }
     }
 
+    /// Reload and reparse the snapshots after renaming.
+    /// Otherwise the GroupSnapshots contain old snapshot pathes and will panick when deleting them
+    fn reload_snapshots(&mut self) -> CResult<()> {
+        self.subvolumes.clear();
+        self.app_config
+            .groups
+            .iter_mut()
+            .for_each(|x| x.clear_snapshots());
+        self.get_subvolumes_and_snapshots()
+    }
+
     #[inline]
     pub fn add_group(&mut self, group_name: impl Into<String> + std::fmt::Debug) -> CResult<bool> {
         self.app_config.add_new_group(group_name, Vec::new())
@@ -166,7 +175,11 @@ impl BtrfsManager {
         index: usize,
         new_name: impl Into<String> + std::fmt::Debug,
     ) -> CResult<bool> {
-        self.app_config.rename_group(index, new_name)
+        let succeed = self.app_config.rename_group(index, new_name)?;
+        if succeed {
+            self.reload_snapshots()?;
+        }
+        Ok(succeed)
     }
 
     pub fn add_subvol_to_group(&mut self, group_index: usize, subvol_index: usize) -> CResult<()> {

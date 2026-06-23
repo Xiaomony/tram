@@ -190,6 +190,11 @@ impl Group {
     pub fn get_snapshots(&self) -> &Vec<GroupSnapshot> {
         &self.snapshots
     }
+
+    #[inline]
+    pub fn clear_snapshots(&mut self) {
+        self.snapshots.clear();
+    }
 }
 
 impl PartialEq<str> for Group {
