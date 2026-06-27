@@ -14,7 +14,7 @@ use crate::tui::snapshots_ui::SnapshotsUI;
 use crate::tui::{broken_snapshots_ui::BrokenSnapshotsUI, menu::Menu};
 use crate::{
     core::{btrfs_manager::BtrfsManager, btrfs_objects::group::Group, error::CResult},
-    tui::subvolumes_ui::SubvolumesUI,
+    tui::settings_ui::SettingsUI,
 };
 use crate::{globals, tui::groups_ui::GroupsUI};
 
@@ -60,7 +60,7 @@ pub struct AppTUI {
     snapshots_ui: SnapshotsUI,
     groups_ui: GroupsUI,
     broken_snapshots_ui: BrokenSnapshotsUI,
-    subvolumes_ui: SubvolumesUI,
+    settings_ui: SettingsUI,
     menu_state: ListState,
     btrfs_mgr: Rc<RefCell<BtrfsManager>>,
     /// the index of current selected snapshot group
@@ -72,16 +72,30 @@ pub struct AppTUI {
 impl AppTUI {
     pub fn new(btrfs_mgr: Rc<RefCell<BtrfsManager>>) -> Self {
         let selected_group = btrfs_mgr.borrow().get_sel_group();
-        Self {
-            snapshots_ui: SnapshotsUI::new(btrfs_mgr.clone(), selected_group.clone()),
-            groups_ui: GroupsUI::new(btrfs_mgr.clone(), selected_group.clone()),
-            broken_snapshots_ui: BrokenSnapshotsUI::new(btrfs_mgr.clone()),
-            subvolumes_ui: SubvolumesUI::new(btrfs_mgr.clone()),
-            menu_state: ListState::default().with_selected(Some(0)),
-            btrfs_mgr,
-            selected_group,
-            focus: AppFocus::Menu,
-            is_inputing: false,
+        if btrfs_mgr.borrow().is_first_time_launch() {
+            Self {
+                snapshots_ui: SnapshotsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+                groups_ui: GroupsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+                broken_snapshots_ui: BrokenSnapshotsUI::new(btrfs_mgr.clone()),
+                settings_ui: SettingsUI::new(btrfs_mgr.clone(), true),
+                menu_state: ListState::default().with_selected(Some(globals::MENU_SETTINGS_INDEX)),
+                btrfs_mgr,
+                selected_group,
+                focus: AppFocus::Body,
+                is_inputing: false,
+            }
+        } else {
+            Self {
+                snapshots_ui: SnapshotsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+                groups_ui: GroupsUI::new(btrfs_mgr.clone(), selected_group.clone()),
+                broken_snapshots_ui: BrokenSnapshotsUI::new(btrfs_mgr.clone()),
+                settings_ui: SettingsUI::new(btrfs_mgr.clone(), false),
+                menu_state: ListState::default().with_selected(Some(0)),
+                btrfs_mgr,
+                selected_group,
+                focus: AppFocus::Menu,
+                is_inputing: false,
+            }
         }
     }
 
@@ -136,14 +150,13 @@ impl AppTUI {
                 .snapshots_ui
                 .render(frame, horizontal_layout[1], focused),
             Groups => self.groups_ui.render(frame, horizontal_layout[1], focused),
-            Subvolumes => self
-                .subvolumes_ui
-                .render(frame, horizontal_layout[1], focused),
             BrokenSnapshots => {
                 self.broken_snapshots_ui
                     .render(frame, horizontal_layout[1], focused)
             }
-            Settings => (),
+            Settings => self
+                .settings_ui
+                .render(frame, horizontal_layout[1], focused),
         }
     }
 
@@ -202,9 +215,8 @@ impl AppTUI {
                             self.is_inputing = is_inputing;
                             return_focus
                         }
-                        Subvolumes => self.subvolumes_ui.handle_events(app_event)?,
                         BrokenSnapshots => self.broken_snapshots_ui.handle_events(app_event)?,
-                        Settings => false,
+                        Settings => self.settings_ui.handle_events(app_event)?,
                     } {
                         self.focus = AppFocus::Menu;
                     }
@@ -330,7 +342,9 @@ pub fn show_confirm_popup(
     } else {
         let bottom_area = bottom_area.centered_horizontally(Constraint::Ratio(1, 2));
         frame.render_widget(
-            Text::from("Ok").style(Modifier::REVERSED).centered(),
+            Text::from("Ok (Enter/Space)")
+                .style(Modifier::REVERSED)
+                .centered(),
             bottom_area,
         );
     }

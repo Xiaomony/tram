@@ -5,7 +5,6 @@ use std::fmt::Display;
 pub enum Menu {
     Snapshots,
     Groups,
-    Subvolumes,
     BrokenSnapshots,
     Settings,
 }
@@ -21,7 +20,7 @@ impl AsRef<str> for Menu {
         match self {
             Snapshots => "  Snapshots ",
             Groups => "  Groups ",
-            Subvolumes => " 󰨖 Subvolumes ",
+            // Subvolumes => " 󰨖 Subvolumes ",
             BrokenSnapshots => "  Broken Snapshots ",
             Settings => "  Settings ",
         }
@@ -33,7 +32,7 @@ impl From<Menu> for &str {
         match val {
             Snapshots => "  Snapshots ",
             Groups => "  Groups ",
-            Subvolumes => " 󰨖 Subvolumes ",
+            // Subvolumes => " 󰨖 Subvolumes ",
             BrokenSnapshots => "  Broken Snapshots ",
             Settings => "  Settings ",
         }

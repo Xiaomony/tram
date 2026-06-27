@@ -50,13 +50,14 @@ pub static MAIN_CONFIG_FILE_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| (*CONFIG_DIR).join("tram.toml"));
 
 // TUI constants
-pub const MENU_ITEMS: [Menu; 5] = [
+pub const MENU_ITEMS: [Menu; 4] = [
     Menu::Snapshots,
     Menu::Groups,
-    Menu::Subvolumes,
     Menu::BrokenSnapshots,
     Menu::Settings,
 ];
+/// index of `Menu::Settings` in `MENU_ITEMS`
+pub const MENU_SETTINGS_INDEX: usize = 3;
 
 pub const WARNING_COLOR: Color = Color::Red;
 

@@ -52,9 +52,9 @@ pub struct SnapshotsUI {
     /// the index of current selected snapshot group
     selected_group: Rc<RefCell<Option<usize>>>,
     focus: SnapshotUIFocus,
-    /// `(index, data , time, subvolumes)`
+    /// `(index, date , time, subvolumes)`
     manual_snapshot_infos: Vec<(usize, String, String, Vec<String>)>,
-    /// `(index, data, time, type, subvolumes)`
+    /// `(index, date, time, type, subvolumes)`
     scheduled_snapshot_infos: Vec<(usize, String, String, String, Vec<String>)>,
     no_valid_group: bool,
 }

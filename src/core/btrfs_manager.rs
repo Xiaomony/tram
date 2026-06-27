@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use tracing::instrument;
 
-use crate::core::app_config::AppConfig;
+use crate::core::app_config::{AppConfig, AutoSnapshotSchedule};
 use crate::core::btrfs_objects::group::Group;
 use crate::core::btrfs_objects::subvolume_snapshot::SubvolumeSnapshot;
 use crate::core::error::{AppError, CResult, throw_invalid_index};
@@ -271,9 +271,9 @@ impl BtrfsManager {
             return throw_invalid_index(index, "recovering broken snapshot");
         };
 
-        let (data, time) = utils::get_current_date_time();
-        let data_time = format!("{data}_{time}");
-        let broken_snapshot_dir = (*globals::BROKEN_SNAPSHOTS_DIR_PATH).join(data_time);
+        let (date, time) = utils::get_current_date_time();
+        let date_time = format!("{date}_{time}");
+        let broken_snapshot_dir = (*globals::BROKEN_SNAPSHOTS_DIR_PATH).join(date_time);
         std::fs::create_dir_all(&broken_snapshot_dir)?;
 
         broken_snapshot.recover(broken_snapshot_dir)?;
@@ -309,6 +309,21 @@ impl BtrfsManager {
     #[inline]
     pub fn get_sel_group(&self) -> Rc<RefCell<Option<usize>>> {
         self.app_config.get_sel_group()
+    }
+
+    #[inline]
+    pub fn get_schedule(&self) -> AutoSnapshotSchedule {
+        self.app_config.get_schedule()
+    }
+
+    #[inline]
+    pub fn change_schedule(&mut self, new_schedule: AutoSnapshotSchedule) -> CResult<()> {
+        self.app_config.change_schedule(new_schedule)
+    }
+
+    #[inline]
+    pub fn is_first_time_launch(&self) -> bool {
+        self.app_config.is_first_time_launch()
     }
 }
 
