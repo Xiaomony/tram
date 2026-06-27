@@ -325,6 +325,11 @@ impl BtrfsManager {
     pub fn is_first_time_launch(&self) -> bool {
         self.app_config.is_first_time_launch()
     }
+
+    #[inline]
+    pub fn check_schedule(&mut self) -> CResult<()> {
+        self.app_config.check_schedule()
+    }
 }
 
 impl Drop for BtrfsManager {

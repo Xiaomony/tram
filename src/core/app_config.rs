@@ -143,6 +143,13 @@ impl AppConfig {
     pub fn get_sel_group(&self) -> Rc<RefCell<Option<usize>>> {
         self.selected_group.clone()
     }
+
+    pub fn check_schedule(&mut self) -> CResult<()> {
+        for x in self.groups.iter_mut() {
+            x.check_schedule(self.schedule)?;
+        }
+        Ok(())
+    }
 }
 
 impl Drop for AppConfig {

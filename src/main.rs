@@ -28,15 +28,33 @@ fn main() -> CResult<()> {
         .capture_span_trace_by_default(debug_mode)
         .display_location_section(debug_mode)
         .install()?;
-
-    let terminal = ratatui::init();
-    let result = run(terminal);
-    ratatui::restore();
+    let result = process_args();
     if debug_mode {
         result
     } else {
         result.wrap_err(">>> If you intend to report this as a bug, please reproduce the bug by 'DEBUG=1 sudo -E tram' and collect output. <<<").wrap_err("=== Skip this error chain and read sections below first! ===")
     }
+}
+
+fn process_args() -> CResult<()> {
+    let result;
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1
+        && let Some(second) = args.get(1)
+    {
+        match second.as_str() {
+            "--check-schedule" => {
+                result = BtrfsManager::new_default_partion().and_then(|mut x| x.check_schedule())
+            }
+            _ => return Ok(()),
+        }
+    } else {
+        let terminal = ratatui::init();
+        result = run(terminal);
+        ratatui::restore();
+    }
+    result
 }
 
 fn run(mut terminal: DefaultTerminal) -> CResult<()> {

@@ -1,12 +1,14 @@
+use crate::core::app_config::AutoSnapshotSchedule;
 use crate::core::btrfs_objects::group_snapshot::GroupSnapshot;
 use crate::core::btrfs_objects::snapshot_type::SnapshotType;
-use crate::core::error::{AppError, CResult, throw_invalid_index};
+use crate::core::error::{AppError, CResult, throw_bug, throw_invalid_index};
 use crate::core::utils::{exec_command, get_current_date_time, mount_point_join};
 use crate::globals;
 use color_eyre::Section;
 use serde::{Deserialize, Serialize};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
+use time::{Date, OffsetDateTime};
 use tracing::instrument;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -180,6 +182,83 @@ impl Group {
         } else {
             throw_invalid_index(index, "recovering snapshot to subvolume")
         }
+    }
+
+    #[instrument]
+    pub fn check_schedule(&mut self, schedule: AutoSnapshotSchedule) -> CResult<()> {
+        if self.subvolumes.is_empty() {
+            return Ok(());
+        }
+        let mut daily = Vec::new();
+        let mut weekly = Vec::new();
+        let mut monthly = Vec::new();
+        let mut boot = Vec::new();
+        if !self.snapshots.is_empty() {
+            let mut i = self.snapshots.len();
+            while i > 0 {
+                i -= 1;
+                let x = match self.snapshots[i].get_type() {
+                    SnapshotType::Daily => &mut daily,
+                    SnapshotType::Monthly => &mut monthly,
+                    SnapshotType::Weekly => &mut weekly,
+                    SnapshotType::Boot => &mut boot,
+                    _ => continue,
+                };
+                let s = self.snapshots.remove(i);
+                let Some(date) = s.get_date_integer() else {
+                    s.delete(&self.group_name)?;
+                    continue;
+                };
+                x.push((s, date));
+            }
+        }
+
+        let today = OffsetDateTime::now_local()?.date();
+        self.sort_and_check(daily, schedule.daily_max, SnapshotType::Daily, today)?;
+        self.sort_and_check(weekly, schedule.weekly_max, SnapshotType::Weekly, today)?;
+        self.sort_and_check(monthly, schedule.monthly_max, SnapshotType::Monthly, today)?;
+        self.sort_and_check(boot, schedule.boot_max, SnapshotType::Boot, today)?;
+        Ok(())
+    }
+
+    fn sort_and_check(
+        &mut self,
+        mut snapshots: Vec<(GroupSnapshot, Date)>,
+        maximum: usize,
+        ty: SnapshotType,
+        today: Date,
+    ) -> CResult<()> {
+        snapshots.sort_unstable_by_key(|x| x.1);
+
+        let create_new = match ty {
+            SnapshotType::Daily => snapshots.last().is_none_or(|x| x.1 != today),
+            SnapshotType::Weekly => snapshots.last().is_none_or(|x| {
+                let (y1, w1, _) = x.1.to_iso_week_date();
+                let (y2, w2, _) = today.to_iso_week_date();
+                (y1, w1) != (y2, w2)
+            }),
+            SnapshotType::Monthly => snapshots
+                .last()
+                .is_none_or(|x| (x.1.year(), x.1.month()) != (today.year(), today.month())),
+            SnapshotType::Boot => true,
+            _ => return throw_bug("Snapshot type `Manually` is passed into `sort_and_check()`"),
+        };
+
+        let old_snapshots_maximum = if create_new {
+            maximum.saturating_sub(1)
+        } else {
+            maximum
+        };
+        while snapshots.len() > old_snapshots_maximum {
+            let (snapshot, _) = snapshots.remove(0);
+            snapshot.delete(&self.group_name)?;
+        }
+        self.snapshots.extend(snapshots.into_iter().map(|x| x.0));
+
+        if create_new && maximum > 0 {
+            self.create_snapshot(ty)?;
+        }
+        Ok(())
     }
 
     #[inline]

@@ -1,4 +1,5 @@
 use color_eyre::Section;
+use time::{Date, Month};
 use tracing::instrument;
 
 use crate::core::btrfs_objects::snapshot_type::SnapshotType;
@@ -115,6 +116,23 @@ impl GroupSnapshot {
             .iter()
             .filter_map(|x| x.get_relate_subvolume_path())
             .collect()
+    }
+
+    /// return Some( (year, month, day) ) if the format of `self.data` is correct(yyyy-mm-dd)
+    pub fn get_date_integer(&self) -> Option<Date> {
+        let mut parts = self.date.split('-');
+        if let Some(raw_year) = parts.next()
+            && let Ok(year) = raw_year.parse::<i32>()
+            && let Some(raw_month) = parts.next()
+            && let Ok(month) = raw_month.parse::<u8>()
+            && let Some(raw_day) = parts.next()
+            && let Ok(day) = raw_day.parse::<u8>()
+        {
+            let month = Month::try_from(month).ok()?;
+            Date::from_calendar_date(year, month, day).ok()
+        } else {
+            None
+        }
     }
 }
 

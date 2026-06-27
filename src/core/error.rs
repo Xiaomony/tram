@@ -14,7 +14,7 @@ pub enum AppError {
 
     #[error("Invalid Config")]
     InvalidConfig,
-    #[error("[Bug] This might be a bug. Please report it:\n\t{0}")]
+    #[error("[Bug] This is a bug. Please report it:\n\t{0}")]
     Bug(String),
 }
 
