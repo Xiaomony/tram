@@ -37,28 +37,36 @@ fn main() -> CResult<()> {
 }
 
 fn process_args() -> CResult<()> {
-    let result;
-    let args: Vec<String> = std::env::args().collect();
+    let mut args = std::env::args();
 
-    if args.len() > 1
-        && let Some(second) = args.get(1)
-    {
-        match second.as_str() {
-            "--check-schedule" => {
-                result = BtrfsManager::new_default_partion().and_then(|mut x| x.check_schedule())
-            }
-            _ => return Ok(()),
+    let mut check_schedule = false;
+    let mut partion = None;
+
+    while let Some(value) = args.next() {
+        match value.as_str() {
+            "--check-schedule" => check_schedule = true,
+            "--device" if let Some(device) = args.next() => partion = Some(device),
+            _ => (),
         }
-    } else {
-        let terminal = ratatui::init();
-        result = run(terminal);
-        ratatui::restore();
     }
-    result
+
+    let mut btrfs_manager = if let Some(device) = partion {
+        BtrfsManager::new(device)?
+    } else {
+        BtrfsManager::new_default_partion()?
+    };
+
+    if check_schedule {
+        btrfs_manager.check_schedule()
+    } else {
+        let result = run(ratatui::init(), btrfs_manager);
+        ratatui::restore();
+        result
+    }
 }
 
-fn run(mut terminal: DefaultTerminal) -> CResult<()> {
-    let mgr = Rc::new(RefCell::new(BtrfsManager::new_default_partion()?));
+fn run(mut terminal: DefaultTerminal, btrfs_manager: BtrfsManager) -> CResult<()> {
+    let mgr = Rc::new(RefCell::new(btrfs_manager));
     let mut tui = AppTUI::new(mgr.clone());
 
     loop {

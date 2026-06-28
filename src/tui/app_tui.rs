@@ -116,20 +116,39 @@ impl AppTUI {
             .style(main_color)
             .highlight_style(Modifier::REVERSED);
 
-        if let Some(crr_group) = get_sel_group(&self.btrfs_mgr, &self.selected_group) {
-            let vert_layout = Layout::vertical([Constraint::Fill(1), Constraint::Length(2)])
-                .split(menu_block.inner(area));
-            let crr_group_prompt = Paragraph::new(vec![
-                "Current Selected Group:\n".into(),
-                crr_group.get_name().yellow().bold().italic().into(),
-            ])
-            .alignment(Alignment::Center);
-            frame.render_widget(menu_block, area);
-            frame.render_stateful_widget(list, vert_layout[0], &mut self.menu_state);
-            frame.render_widget(crr_group_prompt, vert_layout[1]);
-        } else {
-            frame.render_stateful_widget(list.block(menu_block), area, &mut self.menu_state);
-        }
+        let [menu_area, crr_device_prompt_area, crr_group_prompt_area] =
+            menu_block.inner(area).layout(&Layout::vertical([
+                Constraint::Fill(1),
+                Constraint::Length(2),
+                Constraint::Length(2),
+            ]));
+
+        let crr_device_prompt = Paragraph::new(vec![
+            "Current Device:\n".into(),
+            self.btrfs_mgr
+                .borrow()
+                .get_device()
+                .to_string()
+                .yellow()
+                .bold()
+                .italic()
+                .into(),
+        ])
+        .alignment(Alignment::Center);
+
+        let crr_group_name = get_sel_group(&self.btrfs_mgr, &self.selected_group)
+            .map(|x| x.get_name().to_string())
+            .unwrap_or("No Available Groups".to_string());
+        let crr_group_prompt = Paragraph::new(vec![
+            "Current Selected Group:\n".into(),
+            crr_group_name.yellow().bold().italic().into(),
+        ])
+        .alignment(Alignment::Center);
+
+        frame.render_widget(menu_block, area);
+        frame.render_stateful_widget(list, menu_area, &mut self.menu_state);
+        frame.render_widget(crr_device_prompt, crr_device_prompt_area);
+        frame.render_widget(crr_group_prompt, crr_group_prompt_area);
     }
 
     pub fn render(&mut self, frame: &mut Frame) {

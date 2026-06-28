@@ -19,6 +19,7 @@ pub struct BtrfsManager {
     file_lock: FileLock,
     subvolumes: Vec<PathBuf>,
     app_config: AppConfig,
+    device: String,
     /// The application should take a snapshot before recover to a subvolume
     /// and place it at tram_btrfs/broken/
     /// Also, snapshots should be store in this variable
@@ -49,6 +50,7 @@ impl BtrfsManager {
             file_lock,
             subvolumes: Vec::new(),
             app_config,
+            device,
             broken_snapshots: Vec::new(),
         };
         // create a directory to store snapshots under the mounted device
@@ -329,6 +331,11 @@ impl BtrfsManager {
     #[inline]
     pub fn check_schedule(&mut self) -> CResult<()> {
         self.app_config.check_schedule()
+    }
+
+    #[inline]
+    pub fn get_device(&self) -> &String {
+        &self.device
     }
 }
 

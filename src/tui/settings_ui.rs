@@ -2,6 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Margin, Rect},
     style::{Modifier, Stylize},
+    text::Text,
     widgets::{Block, BorderType, List, Padding, Paragraph, Row, Table, TableState},
 };
 use std::{cell::RefCell, rc::Rc};
@@ -91,30 +92,39 @@ impl SettingsUI {
     fn render_settings(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
         let mgr = self.btrfs_mgr.borrow();
         let schedule = mgr.get_schedule();
-        let rows = [
-            Row::new(["Instruction", ""]),
-            Row::new([
+        let raw_rows = [
+            ("Instruction".to_string(), "Enter/Space".to_string()),
+            (
                 "Schedule: Daily Snapshots Maximum".to_string(),
                 schedule.daily_max.to_string(),
-            ]),
-            Row::new([
+            ),
+            (
                 "Schedule: Weekly Snapshots Maximum".to_string(),
                 schedule.weekly_max.to_string(),
-            ]),
-            Row::new([
+            ),
+            (
                 "Schedule: Monthly Snapshots Maximum".to_string(),
                 schedule.monthly_max.to_string(),
-            ]),
-            Row::new([
+            ),
+            (
                 "Schedule: Boot Snapshots Maximum".to_string(),
                 schedule.boot_max.to_string(),
-            ]),
+            ),
         ];
+        let rows: Vec<Row> = raw_rows
+            .into_iter()
+            .map(|x| {
+                Row::new([
+                    Text::from(x.0).alignment(Alignment::Center),
+                    Text::from(x.1).alignment(Alignment::Center),
+                ])
+            })
+            .collect();
         let table = Table::new(
             rows,
             [Constraint::Percentage(60), Constraint::Percentage(40)],
         )
-        .row_highlight_style(if focused {
+        .cell_highlight_style(if focused {
             Modifier::REVERSED
         } else {
             Modifier::empty()

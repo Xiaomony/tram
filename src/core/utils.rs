@@ -59,12 +59,14 @@ pub fn get_crr_os_device() -> CResult<String> {
 /// check whether the given device is a btrfs filesystem
 /// raise_error: if true, raise an error instead of return Ok(false)
 pub fn check_is_btrfs_filesystem(device: &str) -> CResult<()> {
-    let output = exec_command("findmnt", ["-no", "FSTYPE", device])?;
+    let output = exec_command("findmnt", ["-no", "FSTYPE", device]).suggestion(format!(
+        "'{device}' is not a Btrfs file system or doesn't exist."
+    ))?;
     let result = output.trim().split('\n').all(|t| t == "btrfs");
     if result {
         Ok(())
     } else {
-        Err(AppError::General).warning(format!("{device} is not a Btrfs file system."))
+        Err(AppError::General).suggestion(format!("'{device}' is not a Btrfs file system."))
     }
 }
 
