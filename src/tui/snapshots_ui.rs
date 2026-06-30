@@ -252,7 +252,9 @@ and use an USB flash drive and recover via command line instead!!!
                 ref contained_snapshot,
                 ref mut table_state,
                 ..
-            } => Self::render_snapshot_detail(frame, contained_snapshot, table_state, focused),
+            } => {
+                Self::render_snapshot_detail(frame, area, contained_snapshot, table_state, focused)
+            }
             _ => (),
         }
     }
@@ -368,13 +370,12 @@ and use an USB flash drive and recover via command line instead!!!
 
     fn render_snapshot_detail(
         frame: &mut Frame,
+        area: Rect,
         contained_snapshot: &[SubvolumeSnapshot],
         table_state: &mut TableState,
         focused: bool,
     ) {
-        let area = frame
-            .area()
-            .centered(Constraint::Percentage(85), Constraint::Percentage(85));
+        let area = area.centered(Constraint::Percentage(95), Constraint::Percentage(80));
         frame.render_widget(Clear, area);
         let color = app_tui::get_body_color(focused);
         let block = Block::bordered()
@@ -413,7 +414,7 @@ and use an USB flash drive and recover via command line instead!!!
                 .collect();
             let table = Table::new(
                 rows,
-                [Constraint::Percentage(70), Constraint::Percentage(30)],
+                [Constraint::Percentage(75), Constraint::Percentage(25)],
             )
             .header(
                 Row::new(["Snapshot Path", "Related Subvolume"])
@@ -445,7 +446,7 @@ and use an USB flash drive and recover via command line instead!!!
         // handle events if it's confirming currently
         match self.focus {
             SnapshotUIFocus::NoSubvolWarning | SnapshotUIFocus::CreateSnapshotsTooFastWarning => {
-                if event == Enter || event == Escape {
+                if event == Confirm || event == Escape {
                     self.focus = SnapshotUIFocus::ManualSnapshot;
                 }
                 return Ok(false);
@@ -514,7 +515,7 @@ and use an USB flash drive and recover via command line instead!!!
                     Down => table_state.select_next(),
                     Top => table_state.select_first(),
                     Bottom => table_state.select_last(),
-                    Escape | Enter => {
+                    Escape | Confirm => {
                         self.focus = if prev_focus_manual {
                             SnapshotUIFocus::ManualSnapshot
                         } else {
@@ -690,7 +691,7 @@ and use an USB flash drive and recover via command line instead!!!
 
                 _ => (),
             },
-            Enter => match self.focus {
+            Confirm => match self.focus {
                 SnapshotUIFocus::ManualSnapshot => {
                     if !self.manual_snapshot_infos.is_empty()
                         && let Some(i) = self.manual_snapshot_table_state.selected()
@@ -727,5 +728,31 @@ and use an USB flash drive and recover via command line instead!!!
         }
 
         Ok(false)
+    }
+
+    pub fn get_key_prompt(&self) -> (Vec<(AppEvent, &str)>, bool) {
+        use AppEvent::*;
+        match self.focus {
+            SnapshotUIFocus::ManualSnapshot => (
+                vec![
+                    (Create, "Create Snapshot"),
+                    (Delete, "Delete Snapshot"),
+                    (RenameOrRecover, "Recover"),
+                ],
+                true,
+            ),
+            SnapshotUIFocus::ScheduledSnapshot => (
+                vec![(Delete, "Delete Snapshot"), (RenameOrRecover, "Recover")],
+                true,
+            ),
+            SnapshotUIFocus::ConfirmingDelete { .. }
+            | SnapshotUIFocus::ConfirmingRecover { .. } => {
+                (globals::YES_NO_PROMPTS.to_vec(), false)
+            }
+            SnapshotUIFocus::NoSubvolWarning | SnapshotUIFocus::CreateSnapshotsTooFastWarning => {
+                (globals::CONFIRM_PROMPTS.to_vec(), false)
+            }
+            SnapshotUIFocus::SnapshotDetails { .. } => (vec![], false),
+        }
     }
 }

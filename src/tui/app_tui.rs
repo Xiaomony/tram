@@ -1,10 +1,12 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Offset, Rect},
+    layout::{Alignment, Constraint, HorizontalAlignment, Layout, Offset, Rect},
     style::{Color, Modifier, Stylize},
     text::{Line, Text},
-    widgets::{Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Clear, List, ListState, Padding, Paragraph, Row, Table, Wrap,
+    },
 };
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::Rc;
@@ -23,10 +25,9 @@ use crate::{globals, tui::groups_ui::GroupsUI};
 enum AppFocus {
     Menu,
     Body,
-    KeyPrompt,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum AppEvent {
     // Navigate
     Up,
@@ -50,11 +51,49 @@ pub enum AppEvent {
     /// User ***pressed R***
     RenameOrRecover,
     Escape,
-    Enter,
+    Confirm,
     Yes, // press `y` to confirm
     No,  // press `n` to cancle
 
+    /// This is only constructed when generating Key Pormpt
+    QuitApp,
     Other, // reserved for input mode
+}
+
+impl AsRef<str> for AppEvent {
+    fn as_ref(&self) -> &str {
+        use AppEvent::*;
+        match self {
+            Up => "k / ↑",
+            Down => "j / ↓",
+            Left => "h / ←",
+            Right => "l / →",
+
+            Upward => "Ctrl + u/b",
+            Downward => "Ctrl + d/f",
+
+            Top => "g / Home",
+            Bottom => "G / End",
+
+            WindowUp => "Ctrl+ k/↑",
+            WindowDown => "Ctrl+ j/↓",
+            WindowLeft => "Ctrl+ h/←",
+            WindowRight => "Ctrl+ l/→",
+
+            Create => "a",
+            Delete => "d / x",
+            RenameOrRecover => "r",
+
+            Escape => "Esc / Ctrl+[",
+            Confirm => "Space / Enter",
+
+            Yes => "y / Y",
+            No => "n / N",
+
+            QuitApp => "q",
+            Other => "",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -154,30 +193,51 @@ impl AppTUI {
     }
 
     pub fn render(&mut self, frame: &mut Frame) {
-        let horizontal_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(20), Constraint::Percentage(79)])
-            .margin(1)
-            .spacing(1)
-            .split(frame.area());
-        self.render_menu(frame, horizontal_layout[0]);
+        let [left_area, body_area] = frame.area().layout(
+            &Layout::horizontal([Constraint::Percentage(20), Constraint::Percentage(79)])
+                .margin(1)
+                .spacing(1),
+        );
+        let [menu_area, key_prompt_area] = left_area.layout(&Layout::vertical([
+            Constraint::Length(15),
+            Constraint::Fill(1),
+        ]));
+
+        // render menu area
+        self.render_menu(frame, menu_area);
+
+        // render key prompt area
+        let prompt = self.get_key_prompt();
+        let rows: Vec<Row> = prompt
+            .iter()
+            .map(|x| {
+                Row::new([
+                    Text::from(x.0.as_ref()).alignment(Alignment::Center).red(),
+                    Text::from(x.1).alignment(Alignment::Center).blue(),
+                ])
+            })
+            .collect();
+        let key_prompt_block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .title("  Keybindings ")
+            .title_alignment(HorizontalAlignment::Center)
+            .style(globals::BODY_COLOR);
+        let key_prompt_table = Table::new(
+            rows,
+            [Constraint::Percentage(50), Constraint::Percentage(50)],
+        )
+        .block(key_prompt_block);
+        frame.render_widget(key_prompt_table, key_prompt_area);
 
         // render main block
         let crr_menu_item = self.get_crr_menu_item();
         use Menu::*;
         let focused = self.focus == AppFocus::Body;
         match crr_menu_item {
-            Snapshots => self
-                .snapshots_ui
-                .render(frame, horizontal_layout[1], focused),
-            Groups => self.groups_ui.render(frame, horizontal_layout[1], focused),
-            BrokenSnapshots => {
-                self.broken_snapshots_ui
-                    .render(frame, horizontal_layout[1], focused)
-            }
-            Settings => self
-                .settings_ui
-                .render(frame, horizontal_layout[1], focused),
+            Snapshots => self.snapshots_ui.render(frame, body_area, focused),
+            Groups => self.groups_ui.render(frame, body_area, focused),
+            BrokenSnapshots => self.broken_snapshots_ui.render(frame, body_area, focused),
+            Settings => self.settings_ui.render(frame, body_area, focused),
         }
     }
 
@@ -209,7 +269,7 @@ impl AppTUI {
                 Char('a') => AppEvent::Create,
                 Char('d') | Char('x') => AppEvent::Delete,
                 Char('r') => AppEvent::RenameOrRecover,
-                Char(' ') | Enter => AppEvent::Enter,
+                Char(' ') | Enter => AppEvent::Confirm,
                 Char('y') | Char('Y') => AppEvent::Yes,
                 Char('n') | Char('N') => AppEvent::No,
                 Esc => AppEvent::Escape,
@@ -243,7 +303,6 @@ impl AppTUI {
                         self.focus = AppFocus::Menu;
                     }
                 }
-                AppFocus::KeyPrompt => (),
             }
         }
         Ok(false)
@@ -256,10 +315,56 @@ impl AppTUI {
             Down => self.menu_state.select_next(),
             Upward | Top => self.menu_state.select_first(),
             Downward | Bottom => self.menu_state.select_last(),
-            Right | Enter | WindowRight => self.focus = AppFocus::Body,
+            Right | Confirm | WindowRight => self.focus = AppFocus::Body,
             _ => (),
         }
     }
+
+    pub fn get_key_prompt(&self) -> Vec<(AppEvent, &str)> {
+        // (Create, "Create"),
+        // (Delete, "Delete"),
+        // (RenameOrRecover, "Rename / Recover"),
+        // (Escape, "Escape"),
+        // (Confirm, "Enter"),
+        // (Yes, "Yes"),
+        // (No, "No"),
+        use AppEvent::*;
+        let mut prompts = if self.is_inputing {
+            vec![]
+        } else {
+            vec![(QuitApp, "Exit")]
+        };
+        let nevigation_prompts = [
+            (Up, "Up"),
+            (Down, "Down"),
+            (Left, "Left"),
+            (Right, "Right"),
+            (Upward, "Upward"),
+            (Downward, "Downward"),
+            (Top, "Top"),
+            (Bottom, "Bottom"),
+            (WindowUp, "Focus Above"),
+            (WindowDown, "Focus Below"),
+            (WindowLeft, "Focus Left"),
+            (WindowRight, "Focus Right"),
+        ];
+        if self.focus == AppFocus::Body {
+            let (other_prompts, enable_navigation) = match self.get_crr_menu_item() {
+                Menu::Snapshots => self.snapshots_ui.get_key_prompt(),
+                Menu::Groups => self.groups_ui.get_key_prompt(),
+                Menu::BrokenSnapshots => self.broken_snapshots_ui.get_key_prompt(),
+                Menu::Settings => self.settings_ui.get_key_prompt(),
+            };
+            if enable_navigation {
+                prompts.extend(nevigation_prompts);
+            }
+            prompts.extend(other_prompts);
+        } else {
+            prompts.extend(nevigation_prompts);
+        }
+        prompts
+    }
+
     #[inline]
     pub fn get_crr_menu_item(&self) -> Menu {
         globals::MENU_ITEMS[self.menu_state.selected().unwrap()]

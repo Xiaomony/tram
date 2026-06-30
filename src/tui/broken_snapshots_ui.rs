@@ -183,4 +183,18 @@ They may have related subvolumes or not.",
         }
         Ok(false)
     }
+
+    pub fn get_key_prompt(&self) -> (Vec<(AppEvent, &str)>, bool) {
+        use AppEvent::*;
+        match self.focus {
+            BrokenSnapshotsFocus::BrokenSnapshotList => (
+                vec![(Delete, "Delete Snapshot"), (RenameOrRecover, "Recover")],
+                true,
+            ),
+            BrokenSnapshotsFocus::ConfirmingDeleting { .. }
+            | BrokenSnapshotsFocus::ConfirmingRecovering { .. } => {
+                (globals::YES_NO_PROMPTS.to_vec(), false)
+            }
+        }
+    }
 }

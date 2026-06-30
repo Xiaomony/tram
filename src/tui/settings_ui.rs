@@ -142,7 +142,7 @@ impl SettingsUI {
     pub fn handle_events(&mut self, event: AppEvent) -> CResult<bool> {
         use AppEvent::*;
         if self.focus == SettingsUIFocus::Instruction {
-            if event == Enter {
+            if event == Confirm || event == Escape {
                 self.focus = SettingsUIFocus::Settings;
             }
             return Ok(false);
@@ -165,6 +165,8 @@ impl SettingsUI {
             WindowLeft | Escape => return Ok(true),
             Up => self.settings_table_state.select_previous(),
             Down => self.settings_table_state.select_next(),
+            Top | Upward => self.settings_table_state.select_first(),
+            Bottom | Downward => self.settings_table_state.select_last(),
             Right | Left
                 if let Some(i) = self.settings_table_state.selected()
                     && i > 0 =>
@@ -173,11 +175,26 @@ impl SettingsUI {
                 f(&mut schedule, i, event == Left);
                 self.btrfs_mgr.borrow_mut().change_schedule(schedule)?;
             }
-            Enter if let Some(0) = self.settings_table_state.selected() => {
+            Confirm if let Some(0) = self.settings_table_state.selected() => {
                 self.focus = SettingsUIFocus::Instruction
             }
             _ => (),
         }
         Ok(false)
+    }
+
+    pub fn get_key_prompt(&self) -> (Vec<(AppEvent, &str)>, bool) {
+        use AppEvent::*;
+        match self.focus {
+            SettingsUIFocus::Settings if let Some(1..) = self.settings_table_state.selected() => {
+                (vec![(Left, "Reduce"), (Right, "Increase")], true)
+            }
+            SettingsUIFocus::Settings if let Some(0) = self.settings_table_state.selected() => {
+                (vec![(Confirm, "Instruction")], true)
+            }
+            SettingsUIFocus::Instruction => (vec![(Confirm, "Ok"), (Escape, "Ok")], false),
+            // WARN: unexpected condition
+            SettingsUIFocus::Settings => (vec![], false),
+        }
     }
 }

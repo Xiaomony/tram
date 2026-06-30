@@ -21,7 +21,7 @@ enum GroupsUIFocus {
     GroupList,
     IncludedSubvols,
     ExcludedSubvols,
-    DeleteGroup { msg: String, index: usize },
+    DeleteGroupConfirming { msg: String, index: usize },
     CreateGroupInputing,
     RenameGroupInputing { index: usize },
     InvalidGroupNamePopup,
@@ -66,7 +66,7 @@ impl GroupsUI {
         self.render_group_table(frame, focused, groups_area);
         self.render_group_info(frame, focused, groupinfo_area);
         match self.focus {
-            GroupsUIFocus::DeleteGroup { ref msg, .. } => {
+            GroupsUIFocus::DeleteGroupConfirming { ref msg, .. } => {
                 app_tui::show_confirm_popup(
                     frame,
                     frame.area(),
@@ -330,7 +330,7 @@ May caused by one of the following reasons:
                 match event {
                     Escape => self.focus = GroupsUIFocus::GroupList,
 
-                    Enter => {
+                    Confirm => {
                         let succeed = match self.focus {
                             GroupsUIFocus::CreateGroupInputing => {
                                 let new_name = self.input.value();
@@ -363,7 +363,7 @@ May caused by one of the following reasons:
                 Down => self.group_list_table_state.select_next(),
                 Top => self.group_list_table_state.select_first(),
                 Bottom => self.group_list_table_state.select_last(),
-                Enter => {
+                Confirm => {
                     let mgr = self.btrfs_mgr.borrow();
                     let groups = mgr.get_groups();
                     if !groups.is_empty()
@@ -380,7 +380,7 @@ May caused by one of the following reasons:
                     {
                         let i = i.clamp(0, mgr.get_groups().len() - 1);
                         let group = mgr.get_groups().get(i).unwrap();
-                        self.focus = GroupsUIFocus::DeleteGroup {
+                        self.focus = GroupsUIFocus::DeleteGroupConfirming {
                             msg: format!(
                                 "DANGER: this will delete the following group along with all its snapshots!\n\nGroup Name: {}\nSnapshot Count: {}\nIncluded Subvolumes:{}",
                                 group.get_name(),
@@ -430,7 +430,7 @@ May caused by one of the following reasons:
                 Down => self.included_subvols_list_state.select_next(),
                 Top => self.included_subvols_list_state.select_first(),
                 Bottom => self.included_subvols_list_state.select_last(),
-                Enter => {
+                Confirm => {
                     let mut mgr = self.btrfs_mgr.borrow_mut();
                     let groups = mgr.get_groups();
                     if !groups.is_empty()
@@ -459,7 +459,7 @@ May caused by one of the following reasons:
                 Down => self.excluded_subvols_list_state.select_next(),
                 Top => self.excluded_subvols_list_state.select_first(),
                 Bottom => self.excluded_subvols_list_state.select_last(),
-                Enter => {
+                Confirm => {
                     let mut mgr = self.btrfs_mgr.borrow_mut();
                     if !mgr.get_groups().is_empty()
                         && !self.crr_focus_group_excluded_subvols.is_empty()
@@ -477,7 +477,7 @@ May caused by one of the following reasons:
                 }
                 _ => (),
             },
-            GroupsUIFocus::DeleteGroup { index, .. } => match event {
+            GroupsUIFocus::DeleteGroupConfirming { index, .. } => match event {
                 Yes => {
                     self.btrfs_mgr.borrow_mut().delete_group(index)?;
                     self.focus = GroupsUIFocus::GroupList;
@@ -486,10 +486,37 @@ May caused by one of the following reasons:
                 _ => (),
             },
             GroupsUIFocus::InvalidGroupNamePopup => match event {
-                Enter | Escape => self.focus = GroupsUIFocus::GroupList,
+                Confirm | Escape => self.focus = GroupsUIFocus::GroupList,
                 _ => (),
             },
         }
         Ok((false, false))
+    }
+
+    pub fn get_key_prompt(&self) -> (Vec<(AppEvent, &str)>, bool) {
+        use AppEvent::*;
+        match self.focus {
+            GroupsUIFocus::GroupList => (
+                vec![
+                    (Create, "Create Group"),
+                    (Delete, "Delete Group"),
+                    (RenameOrRecover, "Rename"),
+                    (Confirm, "Select Group"),
+                ],
+                true,
+            ),
+            GroupsUIFocus::IncludedSubvols | GroupsUIFocus::ExcludedSubvols => {
+                (vec![(Confirm, "Toggle")], true)
+            }
+
+            GroupsUIFocus::DeleteGroupConfirming { .. } => {
+                (globals::YES_NO_PROMPTS.to_vec(), false)
+            }
+            GroupsUIFocus::InvalidGroupNamePopup => (globals::CONFIRM_PROMPTS.to_vec(), false),
+
+            GroupsUIFocus::CreateGroupInputing | GroupsUIFocus::RenameGroupInputing { .. } => {
+                (vec![], false)
+            }
+        }
     }
 }

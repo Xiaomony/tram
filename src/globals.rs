@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 
-use crate::tui::menu::Menu;
+use crate::tui::{app_tui::AppEvent, menu::Menu};
 use std::{path::PathBuf, sync::LazyLock};
 
 pub const MOUNT_POINT: &str = "/run/tram_btrfs/";
@@ -65,3 +65,12 @@ pub const FOCUSED_COLOR: Color = Color::Rgb(234, 168, 128);
 // pub const FOCUSED_COLOR: Color = Color::LightYellow;
 pub const MENU_COLOR: Color = Color::Cyan;
 pub const BODY_COLOR: Color = Color::LightBlue;
+
+// key prompts
+pub const YES_NO_PROMPTS: [(AppEvent, &str); 3] = [
+    (AppEvent::Yes, "Confirm"),
+    (AppEvent::No, "Cancel"),
+    (AppEvent::Escape, "Cancel"),
+];
+pub const CONFIRM_PROMPTS: [(AppEvent, &str); 2] =
+    [(AppEvent::Escape, "Ok"), (AppEvent::Confirm, "Ok")];
