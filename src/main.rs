@@ -1,17 +1,14 @@
+mod cli;
 mod core;
 mod globals;
 mod tui;
 
+use cli::Cli;
 use color_eyre::{config::HookBuilder, eyre::Context};
-use ratatui::{DefaultTerminal, Frame};
-use std::{cell::RefCell, rc::Rc};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{
-    core::{btrfs_manager::BtrfsManager, error::CResult},
-    tui::app_tui::AppTUI,
-};
+use crate::core::error::CResult;
 
 fn main() -> CResult<()> {
     #[cfg(not(debug_assertions))]
@@ -28,57 +25,10 @@ fn main() -> CResult<()> {
         .capture_span_trace_by_default(debug_mode)
         .display_location_section(debug_mode)
         .install()?;
-    let result = process_args();
+    let result = Cli::process_args();
     if debug_mode {
         result
     } else {
         result.wrap_err(">>> If you intend to report this as a bug, please reproduce the bug by 'DEBUG=1 sudo -E tram' and collect output. <<<").wrap_err("=== Skip this error chain and read sections below first! ===")
-    }
-}
-
-fn process_args() -> CResult<()> {
-    let mut args = std::env::args();
-
-    let mut tui_interface = true;
-    let mut partion = None;
-    let mut is_boot = false;
-
-    while let Some(value) = args.next() {
-        match value.as_str() {
-            "--no-tui" => tui_interface = false,
-            "--boot" => {
-                is_boot = true;
-                tui_interface = false;
-            }
-            "--device" if let Some(device) = args.next() => partion = Some(device),
-            _ => (),
-        }
-    }
-
-    let mut btrfs_manager = if let Some(device) = partion {
-        BtrfsManager::new(device)?
-    } else {
-        BtrfsManager::new_default_partion()?
-    };
-
-    btrfs_manager.check_schedule(is_boot)?;
-    if tui_interface {
-        let result = run(ratatui::init(), btrfs_manager);
-        ratatui::restore();
-        result
-    } else {
-        Ok(())
-    }
-}
-
-fn run(mut terminal: DefaultTerminal, btrfs_manager: BtrfsManager) -> CResult<()> {
-    let mgr = Rc::new(RefCell::new(btrfs_manager));
-    let mut tui = AppTUI::new(mgr.clone());
-
-    loop {
-        terminal.draw(|frame: &mut Frame| tui.render(frame))?;
-        if tui.read_events()? {
-            break Ok(());
-        }
     }
 }
