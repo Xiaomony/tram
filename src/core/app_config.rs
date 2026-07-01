@@ -144,9 +144,9 @@ impl AppConfig {
         self.selected_group.clone()
     }
 
-    pub fn check_schedule(&mut self) -> CResult<()> {
+    pub fn check_schedule(&mut self, is_boot: bool) -> CResult<()> {
         for x in self.groups.iter_mut() {
-            x.check_schedule(self.schedule)?;
+            x.check_schedule(self.schedule, is_boot)?;
         }
         Ok(())
     }

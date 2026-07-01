@@ -1,4 +1,4 @@
-    This is a tool to help you manage your Btrfs snapshots. If you encounter any problems or want any new features, please open an issue on the GitHub: "https://github.com/Xiaomony/tram"
+    This is a tool to help you manage your Btrfs snapshots. If you encounter any problems or want any new features, please open an issue on the GitHub: "https://github.com/Xiaomony/tram_btrfs"
 
     The snapshots are managed in "groups" which include the subvolumes you want to snapshot. You can create, rename, delete groups in the "Groups" window. If your device contains "@" and "@home" subvolumes, the program will prepare a "default" group the first time you launch it.
 

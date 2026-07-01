@@ -749,10 +749,9 @@ and use an USB flash drive and restore via command line instead!!!
             | SnapshotUIFocus::ConfirmingRestore { .. } => {
                 (globals::YES_NO_PROMPTS.to_vec(), false)
             }
-            SnapshotUIFocus::NoSubvolWarning | SnapshotUIFocus::CreateSnapshotsTooFastWarning => {
-                (globals::CONFIRM_PROMPTS.to_vec(), false)
-            }
-            SnapshotUIFocus::SnapshotDetails { .. } => (vec![], false),
+            SnapshotUIFocus::NoSubvolWarning
+            | SnapshotUIFocus::CreateSnapshotsTooFastWarning
+            | SnapshotUIFocus::SnapshotDetails { .. } => (globals::CONFIRM_PROMPTS.to_vec(), false),
         }
     }
 }

@@ -185,7 +185,7 @@ impl Group {
     }
 
     #[instrument]
-    pub fn check_schedule(&mut self, schedule: AutoSnapshotSchedule) -> CResult<()> {
+    pub fn check_schedule(&mut self, schedule: AutoSnapshotSchedule, is_boot: bool) -> CResult<()> {
         if self.subvolumes.is_empty() {
             return Ok(());
         }
@@ -201,7 +201,13 @@ impl Group {
                     SnapshotType::Daily => &mut daily,
                     SnapshotType::Monthly => &mut monthly,
                     SnapshotType::Weekly => &mut weekly,
-                    SnapshotType::Boot => &mut boot,
+                    SnapshotType::Boot => {
+                        if is_boot {
+                            &mut boot
+                        } else {
+                            continue;
+                        }
+                    }
                     _ => continue,
                 };
                 let s = self.snapshots.remove(i);
@@ -217,7 +223,9 @@ impl Group {
         self.sort_and_check(daily, schedule.daily_max, SnapshotType::Daily, today)?;
         self.sort_and_check(weekly, schedule.weekly_max, SnapshotType::Weekly, today)?;
         self.sort_and_check(monthly, schedule.monthly_max, SnapshotType::Monthly, today)?;
-        self.sort_and_check(boot, schedule.boot_max, SnapshotType::Boot, today)?;
+        if is_boot {
+            self.sort_and_check(boot, schedule.boot_max, SnapshotType::Boot, today)?;
+        }
         Ok(())
     }
 

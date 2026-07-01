@@ -325,8 +325,8 @@ impl BtrfsManager {
     }
 
     #[inline]
-    pub fn check_schedule(&mut self) -> CResult<()> {
-        self.app_config.check_schedule()
+    pub fn check_schedule(&mut self, is_boot: bool) -> CResult<()> {
+        self.app_config.check_schedule(is_boot)
     }
 
     #[inline]

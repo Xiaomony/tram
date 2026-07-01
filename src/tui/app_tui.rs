@@ -75,10 +75,10 @@ impl AsRef<str> for AppEvent {
             Top => "g / Home",
             Bottom => "G / End",
 
-            WindowUp => "Ctrl+ k/↑",
-            WindowDown => "Ctrl+ j/↓",
-            WindowLeft => "Ctrl+ h/←",
-            WindowRight => "Ctrl+ l/→",
+            WindowUp => "Ctrl + k/↑",
+            WindowDown => "Ctrl + j/↓",
+            WindowLeft => "Ctrl + h/←",
+            WindowRight => "Ctrl + l/→",
 
             Create => "a",
             Delete => "d / x",
@@ -224,7 +224,7 @@ impl AppTUI {
             .style(globals::BODY_COLOR);
         let key_prompt_table = Table::new(
             rows,
-            [Constraint::Percentage(50), Constraint::Percentage(50)],
+            [Constraint::Percentage(40), Constraint::Percentage(60)],
         )
         .block(key_prompt_block);
         frame.render_widget(key_prompt_table, key_prompt_area);

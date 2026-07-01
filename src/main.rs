@@ -39,12 +39,17 @@ fn main() -> CResult<()> {
 fn process_args() -> CResult<()> {
     let mut args = std::env::args();
 
-    let mut check_schedule = false;
+    let mut tui_interface = true;
     let mut partion = None;
+    let mut is_boot = false;
 
     while let Some(value) = args.next() {
         match value.as_str() {
-            "--check-schedule" => check_schedule = true,
+            "--no-tui" => tui_interface = false,
+            "--boot" => {
+                is_boot = true;
+                tui_interface = false;
+            }
             "--device" if let Some(device) = args.next() => partion = Some(device),
             _ => (),
         }
@@ -56,12 +61,13 @@ fn process_args() -> CResult<()> {
         BtrfsManager::new_default_partion()?
     };
 
-    if check_schedule {
-        btrfs_manager.check_schedule()
-    } else {
+    btrfs_manager.check_schedule(is_boot)?;
+    if tui_interface {
         let result = run(ratatui::init(), btrfs_manager);
         ratatui::restore();
         result
+    } else {
+        Ok(())
     }
 }
 
