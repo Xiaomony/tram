@@ -1,5 +1,5 @@
 use color_eyre::Section;
-use file_lock::{FileLock, FileOptions};
+use nix::fcntl::{Flock, FlockArg};
 use regex::Regex;
 use std::cell::RefCell;
 use std::fs::create_dir_all;
@@ -16,7 +16,9 @@ use crate::globals;
 
 #[derive(Debug)]
 pub struct BtrfsManager {
-    file_lock: FileLock,
+    /// The file lock will release automatically on drop
+    /// So it's never read
+    _file_lock: Flock<std::fs::File>,
     subvolumes: Vec<PathBuf>,
     app_config: AppConfig,
     device: String,
@@ -47,7 +49,7 @@ impl BtrfsManager {
         // if subsequent operations fail, drop() will be executed
         // to release file lock and unmount the device
         let mut new_obj = Self {
-            file_lock,
+            _file_lock: file_lock,
             subvolumes: Vec::new(),
             app_config,
             device,
@@ -69,11 +71,12 @@ impl BtrfsManager {
     }
 
     #[instrument]
-    fn create_file_lock() -> CResult<FileLock> {
-        let options = FileOptions::new().write(true).create(true);
-        FileLock::lock(globals::FILE_LOCK, false, options)
-            .warning("Fail to create file lock.")
-            .suggestion("Another Tram TUI instance is running, please close it!")
+    fn create_file_lock() -> CResult<Flock<std::fs::File>> {
+        let file = std::fs::File::create(globals::FILE_LOCK)?;
+        match Flock::lock(file, FlockArg::LockSharedNonblock) {
+            Ok(lock) => Ok(lock),
+            Err((_, error)) => Err(error.into()),
+        }
     }
 
     #[instrument]
@@ -337,7 +340,6 @@ impl BtrfsManager {
 
 impl Drop for BtrfsManager {
     fn drop(&mut self) {
-        let _ = self.file_lock.unlock();
         let _ = umount_from_default_point();
     }
 }
