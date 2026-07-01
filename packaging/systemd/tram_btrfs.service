@@ -1,0 +1,12 @@
+[Unit]
+Description=Tram Btrfs Scheduled Snapshot Service
+Documentation=https://github.com/Xiaomony/tram_btrfs
+After=local-fs.target
+ConditionPathExists=/usr/bin/tram_btrfs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tram_btrfs --boot
+
+[Install]
+WantedBy=multi-user.target
