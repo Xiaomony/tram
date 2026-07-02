@@ -27,19 +27,22 @@
 <details>
    <summary><b>Installation</b></summary>
 
-- Arch Linux
+- *Arch Linux*
     ```bash
     yay -S tram_btrfs
     ```
 
-- Cargo
-    Installing via `cargo` doesn't support shell completion and boot service.
+- *Cargo*
+
+    Installing via `cargo` ***doesn't support shell completion and boot service***.
     See the section below to manually [generate shell completion](#shell-completion) and [install boot service](#manually-boot-service)
     ```bash
     cargo install tram_btrfs
     ```
 
 </details>
+
+<a id="manually-boot-service"></a>
 <details>
     <summary><b>Boot Service</b></summary>
 
@@ -52,13 +55,11 @@
 
 - The program also checks the schedule whenever it starts. However, boot snapshots are only created when running with `--boot` flag.
 
-<a id="manually-boot-service"></a>
 - If you installed via `cargo` or directly download the GitHub release, you may need to install boot service manually:
     If you're using Systemd, execute this(if not, see above):
         ```bash
         sudo curl -Lo '/usr/lib/systemd/system/tram_btrfs.service' 'https://raw.githubusercontent.com/Xiaomony/tram_btrfs/main/packaging/systemd/tram_btrfs.service'
         ```
-
 </details>
 
 ### Quick Start

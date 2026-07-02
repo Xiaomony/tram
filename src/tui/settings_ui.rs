@@ -19,7 +19,7 @@ enum SettingsUIFocus {
     SubvolumeList,
     SubvolumeDetail { detail: String },
     Settings,
-    Instruction,
+    Instruction { scroll: u16 },
 }
 
 #[derive(Debug)]
@@ -37,7 +37,7 @@ impl SettingsUI {
             subvol_list_state: ListState::default().with_selected(Some(0)),
             settings_table_state: TableState::new().with_selected_cell(Some((0, 1))),
             focus: if is_first_time_launch {
-                SettingsUIFocus::Instruction
+                SettingsUIFocus::Instruction { scroll: 0 }
             } else {
                 SettingsUIFocus::SubvolumeList
             },
@@ -78,12 +78,14 @@ impl SettingsUI {
                     true,
                 );
             }
-            SettingsUIFocus::Instruction => {
+            SettingsUIFocus::Instruction { ref mut scroll } => {
+                let (paragraph, lines) = Self::get_instruction_paragraph();
+                *scroll = (*scroll).clamp(0, lines as u16);
                 app_tui::show_confirm_popup(
                     frame,
                     frame.area(),
                     "Instruction",
-                    Self::get_instruction_paragraph(),
+                    paragraph.scroll((*scroll, 0)),
                     false,
                     true,
                 );
@@ -161,8 +163,10 @@ impl SettingsUI {
     }
 
     #[inline]
-    fn get_instruction_paragraph() -> Paragraph<'static> {
-        Paragraph::new(include_str!("../instruction.txt"))
+    /// return (paragraph, line count)
+    fn get_instruction_paragraph() -> (Paragraph<'static>, usize) {
+        let raw = include_str!("../instruction.txt");
+        (Paragraph::new(raw), raw.lines().count())
     }
 
     #[instrument]
@@ -175,9 +179,16 @@ impl SettingsUI {
                 }
                 return Ok(false);
             }
-            SettingsUIFocus::Instruction => {
-                if event == Confirm || event == Escape {
-                    self.focus = SettingsUIFocus::Settings;
+            SettingsUIFocus::Instruction { ref mut scroll } => {
+                match event {
+                    Confirm | Escape => self.focus = SettingsUIFocus::Settings,
+                    Up => *scroll = scroll.saturating_sub(1),
+                    Upward => *scroll = scroll.saturating_sub(5),
+                    Down => *scroll = scroll.saturating_add(1),
+                    Downward => *scroll = scroll.saturating_add(5),
+                    Top => *scroll = 0,
+                    Bottom => *scroll = u16::MAX,
+                    _ => (),
                 }
                 return Ok(false);
             }
@@ -248,7 +259,7 @@ impl SettingsUI {
                         self.btrfs_mgr.borrow_mut().change_schedule(schedule)?;
                     }
                     Confirm if let Some(0) = self.settings_table_state.selected() => {
-                        self.focus = SettingsUIFocus::Instruction
+                        self.focus = SettingsUIFocus::Instruction { scroll: 0 }
                     }
                     _ => (),
                 }
@@ -267,7 +278,20 @@ impl SettingsUI {
             SettingsUIFocus::Settings if let Some(1..) = self.settings_table_state.selected() => {
                 (vec![(Left, "Reduce"), (Right, "Increase")], true)
             }
-            SettingsUIFocus::Instruction | SettingsUIFocus::SubvolumeDetail { .. } => {
+            SettingsUIFocus::Instruction { .. } => (
+                vec![
+                    (Confirm, "Ok"),
+                    (Escape, "Ok"),
+                    (Up, "Scroll Up"),
+                    (Down, "Scroll Down"),
+                    (Upward, "Scroll Upward"),
+                    (Downward, "Scroll Downward"),
+                    (Top, "Top"),
+                    (Bottom, "Bottom"),
+                ],
+                false,
+            ),
+            SettingsUIFocus::SubvolumeDetail { .. } => {
                 (vec![(Confirm, "Ok"), (Escape, "Ok")], false)
             }
             // WARN: unexpected condition
