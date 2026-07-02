@@ -6,6 +6,11 @@
 
     The program will create a file at "~/.config/tram_btrfs/tram.toml" to store your configurations and settings. Also, it needs root permission to execute btrfs operations. Therefore, it's recommended to execute the program with "sudo -E tram_btrfs" to keep your environment variables so that the config file won't locate under "/root/.config/".
 
+    The program can automatically create "scheduled" snapshots(daily, weekly, monthly, boot). In "Settings" section, you can set the maximum count of each type of scheduled snapshots. It will check the schedule every time you run it(except "boot" snapshot).
+
+    If you want the program to check snapshot schedule once you boot your computer, enable the following Systemd service(If you're not using Systemd, please check the README on GitHub):
+        systemctl enable tram_btrfs.service
+
     By default, the program will detect the device where your current Linux system locates at and detect all the snapshots under it. But you can also specify any Btrfs devices for the program to run on by "--device" flag("tram_btrfs --device /dev/nvme0n1p8" for example).
 
     If you were using other btrfs manager like Timeshift, please delete all their snapshots before uninstalling them. Or it will be considered as subvolumes here.
