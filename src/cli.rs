@@ -64,12 +64,12 @@ impl Cli {
 
         btrfs_manager.check_schedule(cli.boot)?;
 
-        if !cli.no_tui {
+        if cli.no_tui || cli.boot {
+            Ok(())
+        } else {
             let result = run(ratatui::init(), btrfs_manager);
             ratatui::restore();
             result
-        } else {
-            Ok(())
         }
     }
 }
